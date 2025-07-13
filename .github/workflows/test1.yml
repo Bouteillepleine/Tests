@@ -1,4 +1,4 @@
-name: test1
+name: Test1
 on:
   workflow_dispatch:
     inputs:
@@ -211,6 +211,9 @@ jobs:
           key: ${{ runner.os }}-deps-${{ github.event.inputs.FILE }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-deps-
+        env:
+          CCACHE_DIR: $HOME/.ccache_${{ github.event.inputs.FILE }}
+          APT_CACHE_DIR: $HOME/apt-cache
 
       - name: Initialize Kernel Workspace
         run: |
@@ -260,6 +263,9 @@ jobs:
           key: ${{ runner.os }}-deps-${{ github.event.inputs.FILE }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-deps-
+        env:
+          CCACHE_DIR: $HOME/.ccache_${{ github.event.inputs.FILE }}
+          APT_CACHE_DIR: $HOME/apt-cache
 
       - name: Set Kernel Version Suffix
         run: |
