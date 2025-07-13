@@ -1,4 +1,3 @@
-```yaml
 name: Build KernelSU Next SUSFS All
 on:
   workflow_dispatch:
