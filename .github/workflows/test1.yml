@@ -247,6 +247,12 @@ jobs:
           repo sync -c -j8 --no-tags --no-clone-bundle --force-sync
           find kernel_platform -name '*abi_gki_protected_exports*' -delete || true
           sed -i '/protected_exports_list/d' kernel_platform/*/BUILD.bazel 2>/dev/null || true
+          # Create .gitignore to exclude NDK Python files
+          cat <<EOF > .gitignore
+kernel_platform/prebuilts/ndk-r23/toolchains/llvm/prebuilt/linux-x86_64/python3/
+EOF
+          git add .gitignore
+          git commit -m "Add .gitignore for NDK Python files" || true
         env:
           CCACHE_DIR: $HOME/.ccache_${{ github.event.inputs.FILE }}
           APT_CACHE_DIR: $HOME/apt-cache
@@ -342,31 +348,33 @@ jobs:
             kernel_platform/common/scripts/setlocalversion \
             kernel_platform/msm-kernel/scripts/setlocalversion \
             kernel_platform/external/dtc/scripts/setlocalversion; do
-            [ -f "$path" ] || continue
+            [ -f "$path" ] || { echo "⚠️ $path not found, skipping"; continue; }
             echo "Modifying: $path"
-            sed -i 's/ -dirty//g' "$path"
-            sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' "$path"
+            echo "Before modification:"
+            cat "$path"
+            sed -i 's/ -dirty//g' "$path" || { echo "❌ Failed to remove -dirty in $path"; exit 1; }
+            echo "res=$(echo \"\$res\" | sed 's/-dirty//g')" >> "$path" || { echo "❌ Failed to append res cleaning line in $path"; exit 1; }
             if grep -q 'KERNELVERSION.*scm_version' "$path"; then
               echo "Detected NEW setlocalversion format"
-              sed -i "s|echo \"\${KERNELVERSION}.*scm_version}\"|echo \"\${KERNELVERSION}-${ANDROID_VERSION}-${RANDOM_SUFFIX}\"|" "$path"
+              sed -i "s|echo \"\${KERNELVERSION}.*scm_version}\"|echo \"\${KERNELVERSION}-${ANDROID_VERSION}-${RANDOM_SUFFIX}\"|" "$path" || { echo "❌ Failed to update NEW format in $path"; exit 1; }
             elif grep -q 'echo \"\$res\"' "$path"; then
               echo "Detected OLD setlocalversion format"
               if [ "$FAST_BUILD" = "true" ]; then
                 echo "FAST_BUILD enabled: using static res with random suffix"
-                sed -i "s|^res=.*|res=\"-${ANDROID_VERSION}-${RANDOM_SUFFIX}\"|" "$path"
+                sed -i "s|^res=.*|res=\"-${ANDROID_VERSION}-${RANDOM_SUFFIX}\"|" "$path" || { echo "❌ Failed to set static res in $path"; exit 1; }
               else
                 echo "Standard build: injecting random suffix via cut/echo"
-                tac "$path" | sed "0,/echo \"\\\$res\"/s//res=\\\$(echo \\\$res | cut -d- -f1-2)-${RANDOM_SUFFIX}; echo \"\\\$res\";/" | tac > "$path.tmp" && mv "$path.tmp" "$path"
+                tac "$path" | sed "0,/echo \"\\\$res\"/s//res=\\\$(echo \\\$res | cut -d- -f1-2)-${RANDOM_SUFFIX}; echo \"\\\$res\";/" | tac > "$path.tmp" && mv "$path.tmp" "$path" || { echo "❌ Failed to update res in $path"; exit 1; }
               fi
             else
               echo "Unknown format, appending echo manually"
-              echo "echo \"\$res-${RANDOM_SUFFIX}\"" >> "$path"
+              echo "echo \"\$res-${RANDOM_SUFFIX}\"" >> "$path" || { echo "❌ Failed to append echo in $path"; exit 1; }
             fi
-            chmod +x "$path"
-            echo "Modified $path:"
+            chmod +x "$path" || { echo "❌ Failed to set executable permissions on $path"; exit 1; }
+            echo "After modification:"
             cat "$path"
           done
-          git add -A
+          git add kernel_platform/common/scripts/setlocalversion kernel_platform/msm-kernel/scripts/setlocalversion kernel_platform/external/dtc/scripts/setlocalversion
           git commit -m "Apply kernel suffix: $RANDOM_SUFFIX" || true
         env:
           CCACHE_DIR: $HOME/.ccache_${{ github.event.inputs.FILE }}
@@ -378,12 +386,17 @@ jobs:
           echo "🔍 Validating kernel version suffix..."
           cd kernel_workspace
           ANDROID_VERSION="${{ needs.setup.outputs.android_version }}"
+          RANDOM_DIGIT=$(od -An -N1 -tu1 < /dev/urandom | tr -d '[:space:]' | awk '{print $1 % 11}')
+          RANDOM_HASH=$(od -An -N7 -tx1 /dev/urandom | tr -d ' \n')
           RANDOM_SUFFIX="${RANDOM_DIGIT}-o-g${RANDOM_HASH}"
+          echo "Validating with suffix: $RANDOM_SUFFIX"
           for path in \
             kernel_platform/common/scripts/setlocalversion \
             kernel_platform/msm-kernel/scripts/setlocalversion \
             kernel_platform/external/dtc/scripts/setlocalversion; do
-            [ -f "$path" ] || continue
+            [ -f "$path" ] || { echo "⚠️ $path not found, skipping validation"; continue; }
+            echo "Validating: $path"
+            cat "$path"
             if grep -q ' -dirty' "$path"; then
               echo "❌ -dirty still present in $path"
               exit 1
@@ -408,8 +421,6 @@ jobs:
         env:
           CCACHE_DIR: $HOME/.ccache_${{ github.event.inputs.FILE }}
           APT_CACHE_DIR: $HOME/apt-cache
-          RANDOM_DIGIT: $(od -An -N1 -tu1 < /dev/urandom | tr -d '[:space:]' | awk '{print $1 % 11}')
-          RANDOM_HASH: $(od -An -N7 -tx1 /dev/urandom | tr -d ' \n')
           FAST_BUILD: ${{ matrix.fast_build }}
 
       - name: Integrate KernelSU
