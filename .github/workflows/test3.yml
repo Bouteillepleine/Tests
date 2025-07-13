@@ -329,29 +329,51 @@ jobs:
           cd kernel_platform
           echo "Fetching susfs patches"
           CONFIG="$GITHUB_WORKSPACE/kernel_workspace"
-          susfs_version="v1.5.9"
-          # Copy and apply susfs patches
+          # Determine SUSFS version
+          SUSFS_H="./common/include/linux/susfs.h"
+          if [ -f "$SUSFS_H" ]; then
+            susfs_version=$(grep '#define SUSFS_VERSION' "$SUSFS_H" | awk -F'"' '{print $2}')
+          else
+            susfs_version="v1.5.9"
+          fi
+          echo "SUSVER=$susfs_version" >> $GITHUB_ENV
+          echo "SusFS Version: $susfs_version"
+          # Copy SUSFS patches
           cp ../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ./common/
-          cp ../kernel_patches/next/susfs_fix_patches/$susfs_version/fix_apk_sign.c.patch ./common/
-          cp ../kernel_patches/next/susfs_fix_patches/$susfs_version/fix_core_hook.c.patch ./common/
-          cp ../kernel_patches/next/susfs_fix_patches/$susfs_version/fix_selinux.c.patch ./common/
-          cp ../kernel_patches/next/susfs_fix_patches/$susfs_version/fix_ksud.c.patch ./common/
-          cp ../kernel_patches/next/susfs_fix_patches/$susfs_version/fix_rules.c.patch ./common/
-          cp ../kernel_patches/next/scope_min_manual_hooks_v1.4.patch ./common/manual_hooks.patch
-          cp ../kernel_patches/69_hide_stuff.patch ./common/
           cp ../susfs4ksu/kernel_patches/fs/* ./common/fs/
           cp ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
+          # Copy additional patches
+          cp ../kernel_patches/next/scope_min_manual_hooks_v1.4.patch ./common/manual_hooks.patch
+          cp ../kernel_patches/69_hide_stuff.patch ./common/
           # Apply patches in common directory
           cd ./common
           echo "Applying KSUN Hooks..."
           patch -p1 --forward --fuzz=3 < manual_hooks.patch
           patch -p1 --forward --fuzz=3 < 69_hide_stuff.patch
           patch -p1 --forward --fuzz=3 < 10_enable_susfs_for_ksu.patch
-          patch -p1 --forward --fuzz=3 < fix_apk_sign.c.patch
-          patch -p1 --forward --fuzz=3 < fix_core_hook.c.patch
-          patch -p1 --forward --fuzz=3 < fix_selinux.c.patch
-          patch -p1 --forward --fuzz=3 < fix_ksud.c.patch
-          patch -p1 --forward --fuzz=3 < fix_rules.c.patch
+          # Apply version-specific SUSFS patches
+          case "$susfs_version" in
+            "v1.5.5"|"v1.5.6"|"v1.5.7")
+              cp ../../kernel_patches/next/0001-kernel-implement-susfs-v1.5.5-v1.5.7-KSUN-v1.0.8.patch ./ksun_susfs_latest.patch
+              patch -p1 --forward --fuzz=3 < ksun_susfs_latest.patch
+              ;;
+            "v1.5.8"|"v1.5.9")
+              cp ../../kernel_patches/next/susfs_fix_patches/$susfs_version/fix_apk_sign.c.patch ./
+              cp ../../kernel_patches/next/susfs_fix_patches/$susfs_version/fix_core_hook.c.patch ./
+              cp ../../kernel_patches/next/susfs_fix_patches/$susfs_version/fix_selinux.c.patch ./
+              cp ../../kernel_patches/next/susfs_fix_patches/$susfs_version/fix_ksud.c.patch ./
+              cp ../../kernel_patches/next/susfs_fix_patches/$susfs_version/fix_rules.c.patch ./
+              patch -p1 --forward --fuzz=3 < fix_apk_sign.c.patch
+              patch -p1 --forward --fuzz=3 < fix_core_hook.c.patch
+              patch -p1 --forward --fuzz=3 < fix_selinux.c.patch
+              patch -p1 --forward --fuzz=3 < fix_ksud.c.patch
+              patch -p1 --forward --fuzz=3 < fix_rules.c.patch
+              ;;
+            *)
+              echo "Invalid SUSFS version: $susfs_version"
+              exit 1
+              ;;
+          esac
           # Apply legacy fix for android13-5.15
           GKI_V="${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}"
           SUBLEVEL=$(grep '^SUBLEVEL *=' Makefile | head -n1 | cut -d= -f2 | tr -d ' ')
@@ -375,7 +397,12 @@ jobs:
           elif [ ! -f "$SUSFS_H" ]; then
             echo "Creating $SUSFS_H with TASK_STRUCT_NON_ROOT_USER_APP_PROC definition"
             cat <<EOF > "$SUSFS_H"
-         fi
+#ifndef _LINUX_SUSFS_H
+#define _LINUX_SUSFS_H
+#define TASK_STRUCT_NON_ROOT_USER_APP_PROC (1UL << 0)
+#endif
+EOF
+          fi
           # Debug patch application
           echo "Listing modified headers"
           cat ./include/linux/sched.h | grep susfs_task_state || echo "susfs_task_state not found in sched.h"
@@ -394,7 +421,7 @@ jobs:
         run: |
           cd kernel_workspace/kernel_platform
           echo "CONFIG_KSU=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_KPROBES_HOOKutorials=n" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_KPROBES_HOOKS=n" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_KSU_SUSFS=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> ./common/arch/arm64/configs/gki_defconfig
@@ -707,7 +734,7 @@ jobs:
             dir1=$(dirname "$image_path")/
             echo "Found Image file using make compilation path"
           else
-            image_path=$(find "./kernel_workflow_platform/out/" -name "Image" | head -n 1)
+            image_path=$(find "./kernel_platform/out/" -name "Image" | head -n 1)
             if [ -n "$image_path" ]; then
               dir2=$(dirname "$image_path")/
               echo "Found Image file using official script compilation"
