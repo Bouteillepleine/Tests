@@ -708,10 +708,18 @@ jobs:
               exit 0
               ;;
           esac
+          # Install LLVM toolchain to ensure ld.lld is available
+          sudo apt update -qq
+          sudo apt install -yq --no-install-recommends llvm
+          # Verify ld.lld is available
+          if ! command -v ld.lld >/dev/null 2>&1; then
+            echo "❌ ld.lld not found after installing llvm. Aborting."
+            exit 1
+          fi
           export PATH="$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/$CLANG_DIR/clang/host/linux-x86/$CLANG_PATH/bin:$PATH"
           export PATH="/usr/lib/ccache:$PATH"
           export CC="ccache clang"
-          sudo apt install libelf-dev
+          sudo apt install -yq --no-install-recommends libelf-dev
           cd kernel_workspace/kernel_platform/common
       
           # Apply Custom Patches
@@ -725,10 +733,10 @@ jobs:
                 Polly is able to optimize various loops throughout the kernel for\n\
                 maximum cache locality. This requires an LLVM toolchain explicitly\n\
                 compiled with Polly support.\n" arch/Kconfig
-          
+      
           # Step 2: Modify init/Kconfig (Change default optimization to O3)
           sed -i 's/ifdef CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE/ifdef CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3\nKBUILD_CFLAGS += -O3\nKBUILD_RUSTFLAGS += -Copt-level=3\nelse ifdef CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE/' Makefile
-          
+      
           cat <<'EOF' > /tmp/kconfig_changes.txt
           default CC_OPTIMIZE_FOR_PERFORMANCE_O3
           config CC_OPTIMIZE_FOR_PERFORMANCE_O3
@@ -736,10 +744,10 @@ jobs:
               help
                 Choosing this option will pass "-O3" to your compiler to optimize
                 the kernel yet more for performance.
-          EOF      
+          EOF
           sed -i '/default CC_OPTIMIZE_FOR_PERFORMANCE/d' init/Kconfig
           sed -i '/prompt "Compiler optimization level"/r /tmp/kconfig_changes.txt' init/Kconfig
-          
+      
           # Step 3: Create a temporary file with the correct content for Makefile
           cat <<'EOF' > /tmp/polly_flags.txt
           # Enable Polly Optimizer (Full Aggressive Set)
@@ -750,7 +758,7 @@ jobs:
                     -mllvm -polly-detect-keep-going \
                     -mllvm -polly-invariant-load-hoisting \
                     -mllvm -polly-vectorizer=stripmine
-                         
+      
              ifeq ($(shell test $(CONFIG_CLANG_VERSION) -gt 130000; echo $$?),0)
              KBUILD_CFLAGS += -mllvm -polly-loopfusion-greedy=1 \
                     -mllvm -polly-reschedule=1 \
@@ -763,27 +771,27 @@ jobs:
              KBUILD_CFLAGS += -mllvm -polly-opt-fusion=max
              endif
              ifdef CONFIG_LD_DEAD_CODE_DATA_ELIMINATION
-             POLLY_FLAGS += -mllvm -polly-run-dce       
-             endif       
+             POLLY_FLAGS += -mllvm -polly-run-dce
+             endif
           endif
           EOF
-          
+      
           # Step 4: Insert the content of the temporary file into Makefile
           sed -i '/KBUILD_RUSTFLAGS += -Coverflow-checks/r /tmp/polly_flags.txt' Makefile
           echo "Polly source modifications applied successfully using robust method."
-          
+      
           # Step 5: Add additional configurations to gki_defconfig
           DEFCONFIG_PATH="./arch/arm64/configs/gki_defconfig"
           echo "# LLVM Polly Optimizer" >> "${DEFCONFIG_PATH}"
           echo "CONFIG_LLVM_POLLY=y" >> "${DEFCONFIG_PATH}"
           echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3=y" >> "${DEFCONFIG_PATH}"
-          echo "CONFIG_LD_DEAD_CODE_DATA_ELIMINATION=y" >> "${DEFCONFIG_PATH}"   
+          echo "CONFIG_LD_DEAD_CODE_DATA_ELIMINATION=y" >> "${DEFCONFIG_PATH}"
           echo "Custom patches applied successfully."
       
           # Proceed with compilation
           make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC="ccache clang" RUSTC=../../prebuilts/rust/linux-x86/1.73.0b/bin/rustc PAHOLE=../../prebuilts/kernel-build-tools/linux-x86/bin/pahole LD=ld.lld HOSTLD=ld.lld O=out KCFLAGS+="-O2 -flto=thin" ${USE_LLVM_IAS} gki_defconfig all
           ccache -s
-          echo "✅ Fast kernel compilation completed with ThinLTO"
+          echo "✅ Fast kernel compilation completed with ThinLTO"        
 
       - name: 🔨 Build Kernel (Non-Fast)
         if: ${{ github.event.inputs.FAST_BUILD != 'true' }}
