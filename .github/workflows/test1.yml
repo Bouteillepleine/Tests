@@ -108,7 +108,7 @@ jobs:
             ["oneplus_ace3"]="sm8550 kalama android13 5.15"
             ["oneplus_open"]="sm8550 kalama android13 5.15"
             ["oneplus12"]="sm8650 pineapple android14 6.1"
-            ["oneplus_13r"]="sm8750 sun android15 6.6"
+            ["oneplus_13r"]="sm8650 sun android14 6.1"
             ["oneplus_ace3_pro"]="sm8650 pineapple android14 6.1"
             ["oneplus_ace5"]="sm8650 pineapple android14 6.1"
             ["oneplus_pad_pro"]="sm8650 pineapple android14 6.1"
