@@ -108,7 +108,7 @@ jobs:
             ["oneplus_ace3"]="sm8550 kalama android13 5.15"
             ["oneplus_open"]="sm8550 kalama android13 5.15"
             ["oneplus12"]="sm8650 pineapple android14 6.1"
-            ["oneplus_13r"]="sm8650 sun android14 6.1"
+            ["oneplus_13r"]="sm8650 pineapple android14 6.1"
             ["oneplus_ace3_pro"]="sm8650 pineapple android14 6.1"
             ["oneplus_ace5"]="sm8650 pineapple android14 6.1"
             ["oneplus_pad_pro"]="sm8650 pineapple android14 6.1"
@@ -230,15 +230,25 @@ jobs:
           set -e
           echo "📁 Setting up kernel workspace..."
           mkdir -p kernel_workspace/.repo/manifests_fallback
-          curl -sLO --retry 5 --retry-delay 2 --retry-connrefused \
-            "https://raw.githubusercontent.com/OnePlusOSS/kernel_manifest/oneplus/${{ steps.validate.outputs.cpu }}/${{ github.event.inputs.FILE }}.xml"
-          [ -f "${{ github.event.inputs.FILE }}.xml" ] || { echo "Failed to download manifest"; exit 1; }
-          mv "${{ github.event.inputs.FILE }}.xml" kernel_workspace/.repo/manifests_fallback/
+          MANIFEST_URL="https://raw.githubusercontent.com/OnePlusOSS/kernel_manifest/oneplus/sm8650/oneplus_13r.xml"
+          echo "Downloading manifest from: $MANIFEST_URL"
+          curl -sLO --retry 5 --retry-delay 2 --retry-connrefused "$MANIFEST_URL"
+          if [ ! -f "oneplus_13r.xml" ]; then
+            echo "❌ Failed to download manifest"
+            echo "Available manifests in sm8650 branch:"
+            curl -s "https://api.github.com/repos/OnePlusOSS/kernel_manifest/contents/oneplus/sm8650" | \
+              jq -r '.[] | select(.name | endswith(".xml")) | .name'
+            exit 1
+          fi
+          mv "oneplus_13r.xml" kernel_workspace/.repo/manifests_fallback/
           cd kernel_workspace
-          repo init -u https://github.com/OnePlusOSS/kernel_manifest.git -b oneplus/${{ steps.validate.outputs.cpu }} -m ${{ github.event.inputs.FILE }}.xml --depth=1
+          repo init -u https://github.com/OnePlusOSS/kernel_manifest.git -b oneplus/sm8650 -m oneplus_13r.xml --depth=1
           repo sync -c -j8 --no-tags --no-clone-bundle --force-sync
           find kernel_platform -name '*abi_gki_protected_exports*' -delete || true
           sed -i '/protected_exports_list/d' kernel_platform/*/BUILD.bazel 2>/dev/null || true
+        env:
+          CCACHE_DIR: $HOME/.ccache_${{ github.event.inputs.FILE }}
+          APT_CACHE_DIR: $HOME/apt-cache
 
       - name: Upload Workspace
         uses: actions/upload-artifact@v4
@@ -377,48 +387,48 @@ jobs:
           cd kernel_workspace/kernel_platform/common
           CONFIG="arch/arm64/configs/gki_defconfig"
           cat <<EOF >> "$CONFIG"
-          CONFIG_KSU=y
-          CONFIG_KSU_SUSFS=y
-          CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y
-          CONFIG_KSU_SUSFS_SUS_PATH=y
-          CONFIG_KSU_SUSFS_SUS_MOUNT=y
-          CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
-          CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y
-          CONFIG_KSU_SUSFS_SUS_KSTAT=y
-          CONFIG_KSU_SUSFS_SUS_OVERLAYFS=n
-          CONFIG_KSU_SUSFS_TRY_UMOUNT=y
-          CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y
-          CONFIG_KSU_SUSFS_SPOOF_UNAME=y
-          CONFIG_KSU_SUSFS_ENABLE_LOG=y
-          CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
-          CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
-          CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
-          CONFIG_TMPFS_XATTR=y
-          CONFIG_TMPFS_POSIX_ACL=y
-          CONFIG_TCP_CONG_ADVANCED=y
-          CONFIG_TCP_CONG_BBR=y
-          CONFIG_NET_SCH_FQ=y
-          CONFIG_TCP_CONG_BIC=n
-          CONFIG_TCP_CONG_WESTWOOD=n
-          CONFIG_TCP_CONG_HTCP=n
-          CONFIG_IP_ECN=y
-          CONFIG_TCP_ECN=y
-          CONFIG_IPV6_ECN=y
-          CONFIG_IP_NF_TARGET_ECN=y
-          CONFIG_DEBUG_KERNEL=n
-          CONFIG_DYNAMIC_DEBUG=n
-          CONFIG_DEBUG_INFO=n
-          CONFIG_MQ_IOSCHED_SSG=y
-          CONFIG_MQ_IOSCHED_SSG_CGROUP=y
-          CONFIG_LTO_CLANG=y
-          CONFIG_LTO_CLANG_THIN=y
-          CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y
-          CONFIG_LLVM_POLLY=y
-          CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3=y
-          CONFIG_LD_DEAD_CODE_DATA_ELIMINATION=y
-          $( [ "${{ github.event.inputs.KPM }}" = "true" ] && echo "CONFIG_KPM=y" )
-          $( [ "${{ github.event.inputs.VFS }}" = "true" ] && echo -e "CONFIG_KSU_SUSFS_SUS_SU=n\nCONFIG_KSU_MANUAL_HOOK=y" || echo -e "CONFIG_KSU_SUSFS_SUS_SU=y\nCONFIG_KPROBES=y" )
-          EOF
+CONFIG_KSU=y
+CONFIG_KSU_SUSFS=y
+CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y
+CONFIG_KSU_SUSFS_SUS_PATH=y
+CONFIG_KSU_SUSFS_SUS_MOUNT=y
+CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
+CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y
+CONFIG_KSU_SUSFS_SUS_KSTAT=y
+CONFIG_KSU_SUSFS_SUS_OVERLAYFS=n
+CONFIG_KSU_SUSFS_TRY_UMOUNT=y
+CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y
+CONFIG_KSU_SUSFS_SPOOF_UNAME=y
+CONFIG_KSU_SUSFS_ENABLE_LOG=y
+CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+CONFIG_TMPFS_XATTR=y
+CONFIG_TMPFS_POSIX_ACL=y
+CONFIG_TCP_CONG_ADVANCED=y
+CONFIG_TCP_CONG_BBR=y
+CONFIG_NET_SCH_FQ=y
+CONFIG_TCP_CONG_BIC=n
+CONFIG_TCP_CONG_WESTWOOD=n
+CONFIG_TCP_CONG_HTCP=n
+CONFIG_IP_ECN=y
+CONFIG_TCP_ECN=y
+CONFIG_IPV6_ECN=y
+CONFIG_IP_NF_TARGET_ECN=y
+CONFIG_DEBUG_KERNEL=n
+CONFIG_DYNAMIC_DEBUG=n
+CONFIG_DEBUG_INFO=n
+CONFIG_MQ_IOSCHED_SSG=y
+CONFIG_MQ_IOSCHED_SSG_CGROUP=y
+CONFIG_LTO_CLANG=y
+CONFIG_LTO_CLANG_THIN=y
+CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y
+CONFIG_LLVM_POLLY=y
+CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3=y
+CONFIG_LD_DEAD_CODE_DATA_ELIMINATION=y
+$( [ "${{ github.event.inputs.KPM }}" = "true" ] && echo "CONFIG_KPM=y" )
+$( [ "${{ github.event.inputs.VFS }}" = "true" ] && echo -e "CONFIG_KSU_SUSFS_SUS_SU=n\nCONFIG_KSU_MANUAL_HOOK=y" || echo -e "CONFIG_KSU_SUSFS_SUS_SU=y\nCONFIG_KPROBES=y" )
+EOF
           sed -i '/CONFIG_REGMAP_KUNIT=m/d; /CONFIG_INPUT_KUNIT_TEST=m/d; /CONFIG_SND_SOC_TOPOLOGY_KUNIT_TEST=m/d' "$CONFIG"
           sed -i '/CONFIG_SND_SOC_UTILS_KUNIT_TEST=m/d; /CONFIG_HID_KUNIT_TEST=m/d; /CONFIG_RTC_LIB_KUNIT_TEST=m/d' "$CONFIG"
           sed -i '/CONFIG_CLK_KUNIT_TEST=m/d; /CONFIG_CLK_GATE_KUNIT_TEST=m/d; /CONFIG_IIO_FORMAT_KUNIT_TEST=m/d' "$CONFIG"
@@ -536,7 +546,7 @@ jobs:
           fi
           cp "$IMAGE_PATH" AnyKernel3/Image
           cp "$IMAGE_PATH" kernel_platform/out/FinalImageFind/Image
-          if [ "${{ needs.setup.outputs.cpu }}" = "sm8750" ] && [ "${{ github.event.inputs.FAST_BUILD }}" = "false" ]; then
+          if [ "${{ needs.setup.outputs.cpu }}" = "sm8650" ] && [ "${{ github.event.inputs.FAST_BUILD }}" = "false" ]; then
             for file in dtbo.img system_dlkm.erofs.img vendor_dlkm.img vendor_boot.img; do
               if [ -f "$(dirname "$IMAGE_PATH")/$file" ]; then
                 target_name="${file/system_dlkm.erofs.img/system_dlkm.img}"
