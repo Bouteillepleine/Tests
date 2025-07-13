@@ -1,4 +1,4 @@
-name: Build KernelSU Next
+name: Build KernelSU Next SUSFS All
 on:
   workflow_dispatch:
     inputs:
@@ -146,8 +146,8 @@ jobs:
             echo "BUILD_METHOD=gki" >> $GITHUB_OUTPUT
           fi
   build:
-    needs khóa [validate-combinations]
-    name: Build for ${{ github.event.inputs.FILE }} ${{ github.event.inputs.FAST_BUILD == 'true' && ' [FAST]' || '' }}${{ github.event.inputs.SCHED == 'true' && ' [SCHED]' || '' }}
+    needs: [validate-combinations]
+    name: Build for ${{ github.event.inputs.FILE }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -189,7 +189,6 @@ jobs:
           echo "✅ Environment variables validated: CPU=${{ env.CPU }}, CPUD=${{ env.CPUD }}, BUILD_METHOD=${{ env.BUILD_METHOD }}"
       - name: Check Disk Space
         run: df -h
-
       - name: Maximize Build Space
         uses: easimon/maximize-build-space@master
         with:
@@ -199,7 +198,6 @@ jobs:
           remove-android: 'true'
           remove-haskell: 'true'
           remove-codeql: 'true'
-
       - name: Create and Enable 3G Swap
         run: |
           sudo swapoff -a
@@ -210,7 +208,7 @@ jobs:
           free -h
       - name: Set Cache Environment
         run: |
-          echo-CCACHE_DIR="$HOME/.ccache_${{ github.event.inputs.FILE }}" >> $GITHUB_ENV
+          echo "CCACHE_DIR=$HOME/.ccache_${{ github.event.inputs.FILE }}" >> $GITHUB_ENV
           mkdir -p "$HOME/.ccache_${{ github.event.inputs.FILE }}"
           echo "set: $HOME/.ccache_${{ github.event.inputs.FILE }}"
       - name: Configure Git
@@ -682,7 +680,6 @@ jobs:
           make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC="ccache clang" RUSTC=../../prebuilts/rust/linux-x86/1.73.0b/bin/rustc PAHOLE=../../prebuilts/kernel-build-tools/linux-x86/bin/pahole LD=ld.lld HOSTLD=ld.lld O=out KCFLAGS+="-O2 -flto=thin" ${USE_LLVM_IAS} gki_defconfig all
           ccache -s
           echo "✅ Fast kernel compilation completed with ThinLTO"
-
       - name: 🔨 Build Kernel (Non-Fast)
         if: ${{ github.event.inputs.FAST_BUILD != 'true' }}
         run: |
@@ -787,5 +784,5 @@ jobs:
       - name: Upload AnyKernel3
         uses: actions/upload-artifact@v4
         with:
-          name: AnyKernel3_KernelSU_Next_${{ env.KSUVER }}_${{ steps.file_clean.outputs.value }}_${{ env.BUILD_METHOD }}
+          name: AnyKernel3_KernelSU_Next_${{ env.KSUVER }}_${{ steps.file_clean.outputs.value }}_${{ env.BUILD_METHOD }}${{ github.event.inputs.FAST_BUILD == 'true' && '_FAST' || '' }}${{ github.event.inputs.SCHED == 'true' && '_SCHED' || '' }}
           path: ./AnyKernel3/*
