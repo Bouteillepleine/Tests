@@ -249,8 +249,8 @@ jobs:
           sed -i '/protected_exports_list/d' kernel_platform/*/BUILD.bazel 2>/dev/null || true
           # Create .gitignore to exclude NDK Python files
           cat <<EOF > .gitignore
-kernel_platform/prebuilts/ndk-r23/toolchains/llvm/prebuilt/linux-x86_64/python3/
-EOF
+          kernel_platform/prebuilts/ndk-r23/toolchains/llvm/prebuilt/linux-x86_64/python3/
+          EOF
           git add .gitignore
           git commit -m "Add .gitignore for NDK Python files" || true
         env:
