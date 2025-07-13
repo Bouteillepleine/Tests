@@ -1,0 +1,787 @@
+name:  KernelSU Next SUSFS 
+on:
+  workflow_dispatch:
+    inputs:
+      FILE:
+        type: choice
+        description: "Configuration File"
+        required: true
+        default: oneplus_13r
+        options:
+          - oneplus_nord_ce4_lite_5g_v
+          - oneplus_nord_ce4_v
+          - oneplus_nord_4_v
+          - oneplus_ace_3v_v
+          - oneplus_10_pro_v
+          - oneplus_10t_v
+          - oneplus_11r_v
+          - oneplus_ace2_v
+          - oneplus_ace_pro_v
+          - oneplus_11_v
+          - oneplus_12r_v
+          - oneplus_ace2_pro_v
+          - oneplus_ace3_v
+          - oneplus_open_v
+          - oneplus12_v
+          - oneplus_13r
+          - oneplus_ace3_pro_v
+          - oneplus_ace5
+          - oneplus_pad_pro_v
+          - oneplus_pad2_v
+          - oneplus_ace5_pro
+          - oneplus_13
+          - oneplus_13t
+          - oneplus_13s
+          - oneplus_pad_2_pro
+          - oneplus_pad_3
+      COMBINATION:
+        type: choice
+        description: "Configuration File"
+        required: true
+        default: oneplus_13r
+        options:
+          - oneplus_nord_ce4_lite_5g_v
+          - oneplus_nord_ce4_v
+          - oneplus_nord_4_v
+          - oneplus_ace_3v_v
+          - oneplus_10_pro_v
+          - oneplus_10t_v
+          - oneplus_11r_v
+          - oneplus_ace2_v
+          - oneplus_ace_pro_v
+          - oneplus_11_v
+          - oneplus_12r_v
+          - oneplus_ace2_pro_v
+          - oneplus_ace3_v
+          - oneplus_open_v
+          - oneplus12_v
+          - oneplus_13r
+          - oneplus_ace3_pro_v
+          - oneplus_ace5
+          - oneplus_pad_pro_v
+          - oneplus_pad2_v
+          - oneplus_ace5_pro
+          - oneplus_13
+          - oneplus_13t
+          - oneplus_13s
+          - oneplus_pad_2_pro
+          - oneplus_pad_3
+      BUILD_METHOD:
+        type: choice
+        description: "Build Method"
+        required: true
+        default: gki
+        options:
+          - gki
+          - perf
+      SUSFS_CI:
+        type: choice
+        description: "SUSFS Module Download Method"
+        required: true
+        default: CI
+        options:
+          - CI
+          - Release
+          - NoN
+      SUFFIX:
+        type: string
+        description: "Custom Kernel Suffix (leave blank to use a random string)"
+        required: false
+        default: ""
+      BUILD_TIME:
+        type: string
+        description: "Custom Build Time (leave blank to use current time)"
+        required: false
+        default: "Fri May 30 04:01:05 UTC 2025"
+      FAST_BUILD:
+        type: boolean
+        description: "Enable Fast Build?"
+        required: true
+        default: true
+      SCHED:
+        type: boolean
+        description: "Add Fengchi Driver?"
+        required: true
+        default: false
+jobs:
+  validate-combinations:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate Input Combinations
+        run: |
+          echo "🔧 Validating input combinations..."
+          FILE="${{ github.event.inputs.FILE }}"
+          
+          # Define valid combinations with base model only (no _v/_t/_u...)
+          declare -A VALID_COMBINATIONS=(
+            ["oneplus_nord_ce4_lite_5g"]="sm6375 blair android14 6.1"
+            ["oneplus_nord_ce4"]="sm7550 crow android14 5.15"
+            ["oneplus_nord_4"]="sm7675 pineapple android14 6.1"
+            ["oneplus_ace_3v"]="sm7675 pineapple android14 6.1"
+            ["oneplus_10_pro"]="sm8450 waipio android12 5.10"
+            ["oneplus_10t"]="sm8475 waipio android12 5.10"
+            ["oneplus_11r"]="sm8475 waipio android12 5.10"
+            ["oneplus_ace2"]="sm8475 waipio android12 5.10"
+            ["oneplus_ace_pro"]="sm8475 waipio android12 5.10"
+            ["oneplus_11"]="sm8550 kalama android13 5.15"
+            ["oneplus_12r"]="sm8550 kalama android13 5.15"
+            ["oneplus_ace2_pro"]="sm8550 kalama android13 5.15"
+            ["oneplus_ace3"]="sm8550 kalama android13 5.15"
+            ["oneplus_open"]="sm8550 kalama android13 5.15"
+            ["oneplus12"]="sm8650 pineapple android14 6.1"
+            ["oneplus_13r"]="sm8650 pineapple android14 6.1"
+            ["oneplus_ace3_pro"]="sm8650 pineapple android14 6.1"
+            ["oneplus_ace5"]="sm8650 pineapple android14 6.1"
+            ["oneplus_pad_pro"]="sm8650 pineapple android14 6.1"
+            ["oneplus_pad2"]="sm8650 pineapple android14 6.1"
+            ["oneplus_ace5_pro"]="sm8750 sun android15 6.6"
+            ["oneplus_13"]="sm8750 sun android15 6.6"
+            ["oneplus_13t"]="sm8750 sun android15 6.6"
+            ["oneplus_13s"]="sm8750 sun android15 6.6"
+            ["oneplus_pad_2_pro"]="sm8750 sun android15 6.6"
+            ["oneplus_pad_3"]="sm8750 sun android15 6.6"
+          )
+          # Recursively strip "_[a-z]+" suffixes to match base key
+          get_combination() {
+            local key="$1"
+            while true; do
+              if [[ -n "${VALID_COMBINATIONS[$key]+_}" ]]; then
+                echo "${VALID_COMBINATIONS[$key]}"
+                return 0
+              fi
+              if [[ "$key" =~ ^(.+)_([a-z]+)$ ]]; then
+                key="${BASH_REMATCH[1]}"
+              else
+                return 1
+              fi
+            done
+          }
+          # Try to resolve FILE to a valid combination
+          COMBINATION="$(get_combination "$FILE")" || {
+            echo "❌ Unknown FILE: $FILE"
+            echo "Valid base models:"
+            for model in "${!VALID_COMBINATIONS[@]}"; do
+              echo "- $model: ${VALID_COMBINATIONS[$model]}"
+            done
+            exit 1
+          }
+          # Split the combination into fields
+          read CPU CPUD ANDROID_VERSION KERNEL_VERSION <<< "$COMBINATION"
+          echo "✅ Valid combination: FILE=$FILE, CPU=$CPU, CPUD=$CPUD, ANDROID_VERSION=$ANDROID_VERSION, KERNEL_VERSION=$KERNEL_VERSION"
+          echo "CPU=$CPU" >> $GITHUB_ENV
+          echo "CPUD=$CPUD" >> $GITHUB_ENV
+          echo "ANDROID_VERSION=$ANDROID_VERSION" >> $GITHUB_ENV
+          echo "KERNEL_VERSION=$KERNEL_VERSION" >> $GITHUB_ENV
+          # Set BUILD_METHOD based on ANDROID_VERSION and KERNEL_VERSION
+          if [[ "$ANDROID_VERSION" == "android15" && "$KERNEL_VERSION" == "6.6" ]]; then
+            echo "BUILD_METHOD=perf" >> $GITHUB_ENV
+          else
+            echo "BUILD_METHOD=gki" >> $GITHUB_ENV
+          fi
+
+  build:
+    needs: [validate-combinations]
+    name: ${{ github.event.inputs.FAST_BUILD == 'true' && ' [FAST]' || '' }}${{ github.event.inputs.SCHED == 'true' && ' [SCHED]' || '' }}For ${{ github.event.inputs.FILE }} ${{ env.BUILD_METHOD }} ${{ github.event.inputs.SUFFIX }}
+    runs-on: ubuntu-latest
+    env:
+      CPU: ${{ env.CPU }}
+      CPUD: ${{ env.CPUD }}
+      ANDROID_VERSION: ${{ env.ANDROID_VERSION }}
+      KERNEL_VERSION: ${{ env.KERNEL_VERSION }}
+      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_HARDLINK: "true"
+      CCACHE_MAXSIZE: 8G
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check Disk Space
+        run: df -h
+
+      - name: Maximize Build Space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 8192
+          temp-reserve-mb: 2048
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+
+      - name: Create and Enable 3G Swap
+        run: |
+          sudo swapoff -a
+          sudo fallocate -l 3G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
+      - name: Set Cache Environment
+        run: |
+          echo "CCACHE_DIR=$HOME/.ccache_${{ github.event.inputs.FILE }}" >> $GITHUB_ENV
+          mkdir -p "$HOME/.ccache_${{ github.event.inputs.FILE }}"
+          echo "set: $HOME/.ccache_${{ github.event.inputs.FILE }}"
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "O+builder"
+          git config --global user.email "O+builder@yahoo.com"
+
+      - name: Configure APT Cache
+        run: |
+          APT_CACHE_DIR="$HOME/apt-cache"
+          mkdir -p "$APT_CACHE_DIR"/{archives,lists/partial}
+          echo "Dir::Cache \"$APT_CACHE_DIR\";" | sudo tee /etc/apt/apt.conf.d/90user-cache
+          echo "Dir::Cache::archives \"$APT_CACHE_DIR/archives\";" | sudo tee -a /etc/apt/apt.conf.d/90user-cache
+          echo "Dir::State::lists \"$APT_CACHE_DIR/lists\";" | sudo tee -a /etc/apt/apt.conf.d/90user-cache
+          echo "Acquire::Check-Valid-Until \"false\";" | sudo tee -a /etc/apt/apt.conf.d/90user-cache
+          echo "Acquire::Languages \"none\";" | sudo tee -a /etc/apt/apt.conf.d/90user-cache
+          sudo chown -R $USER:$USER "$APT_CACHE_DIR"
+
+      - name: Set APT Cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ env.HOME }}/apt-cache
+          key: ${{ runner.os }}-apt-${{ hashFiles('.github/workflows/build.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-apt-
+
+      - name: Install Build Dependencies
+        run: |
+          echo "🔧 Installing build dependencies..."
+          sudo rm -f /var/lib/apt/lists/lock /var/lib/dpkg/lock
+          APT_CACHE_DIR="$HOME/apt-cache"
+          mkdir -p "$APT_CACHE_DIR/lists/partial"
+          sudo apt -o Dir::Cache="$APT_CACHE_DIR" update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt -o Dir::Cache="$APT_CACHE_DIR" install -yq --no-install-recommends \
+            python3 git curl ccache libelf-dev \
+            build-essential flex bison libssl-dev \
+            libncurses-dev liblz4-tool zlib1g-dev \
+            libxml2-utils rsync unzip curl bison flex \
+            make binutils dwarves git lld pahole zip \
+            perl make gcc python3 python-is-python3 \
+            bc libssl-dev libelf-dev clang wget cmake \
+            llvm
+          wget https://apt.llvm.org/llvm.sh
+          sudo chmod +x llvm.sh
+          sudo ./llvm.sh 20 all
+          echo "✅ All dependencies successfully installed"
+
+      - name: Restore Ccache
+        uses: actions/cache@v3
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ runner.os }}-${{ github.ref_name }}-${{ github.event.inputs.FILE }}-${{ env.BUILD_METHOD }}-${{ github.event.inputs.FAST_BUILD == 'true' && 'alpha' || 'beta' }}-15
+
+      - name: Initialize Ccache
+        run: |
+          INIT_FLAG="${{ env.CCACHE_DIR }}/.ccache_initialized"
+          if command -v ccache >/dev/null 2>&1; then
+            if [ ! -f "$INIT_FLAG" ]; then
+              echo "Initializing ccache (${{ env.CCACHE_DIR }})..."
+              mkdir -p "${{ env.CCACHE_DIR }}"
+              ccache -M ${{ env.CCACHE_MAXSIZE }}
+              touch "$INIT_FLAG"
+              echo "ccache Initialization Complete"
+            else
+              echo "ccache Already Initialized, Skipping"
+            fi
+          else
+            echo "ccache Not Installed, Skipping"
+          fi
+          ccache -s
+
+      - name: Install Repo Tool
+        run: |
+          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/repo
+          chmod a+x ~/repo
+          sudo mv ~/repo /usr/local/bin/repo
+
+      - name: Initialize Repo and Sync
+        run: |
+          mkdir kernel_workspace && cd kernel_workspace
+          repo init -u https://github.com/OnePlusOSS/kernel_manifest.git -b refs/heads/oneplus/${{ env.CPU }} -m ${{ github.event.inputs.FILE }}.xml --depth=1
+          repo sync -c -j$(nproc --all) --no-tags --no-clone-bundle --force-sync
+          if [ -e kernel_platform/common/BUILD.bazel ]; then
+            sed -i '/^[[:space:]]*"protected_exports_list"[[:space:]]*:[[:space:]]*"android\/abi_gki_protected_exports_aarch64",$/d' kernel_platform/common/BUILD.bazel
+          fi
+          if [ -e kernel_platform/msm-kernel/BUILD.bazel ]; then
+            sed -i '/^[[:space:]]*"protected_exports_list"[[:space:]]*:[[:space:]]*"android\/abi_gki_protected_exports_aarch64",$/d' kernel_platform/msm-kernel/BUILD.bazel
+          fi
+          rm kernel_platform/common/android/abi_gki_protected_exports_* || echo "No protected exports!"
+          rm kernel_platform/msm-kernel/android/abi_gki_protected_exports_* || echo "No protected exports!"
+
+      - name: Debug Show Selected Inputs
+        run: |
+          echo "Selected CPU: ${{ env.CPU }}"
+          echo "Selected FILE: ${{ github.event.inputs.FILE }}"
+          echo "Selected CPUD: ${{ env.CPUD }}"
+          echo "Selected ANDROID_VERSION: ${{ env.ANDROID_VERSION }}"
+          echo "Selected KERNEL_VERSION: ${{ env.KERNEL_VERSION }}"
+          echo "Selected BUILD_METHOD: ${{ env.BUILD_METHOD }}"
+          echo "Custom SUFFIX: ${{ github.event.inputs.SUFFIX }}"
+          echo "Custom BUILD_TIME: ${{ github.event.inputs.BUILD_TIME }}"
+          echo "Selected SUSFS_CI: ${{ github.event.inputs.SUSFS_CI }}"
+          echo "Selected FAST_BUILD: ${{ github.event.inputs.FAST_BUILD }}"
+          echo "Selected SCHED: ${{ github.event.inputs.SCHED }}"
+
+      - name: Download kernel-manifest
+        id: fetch_manifest
+        run: |
+          file="${{ github.event.inputs.FILE }}"
+          cpu="${{ env.CPU }}"
+          mkdir -p .repo/manifests_fallback
+          echo "Downloading manifest $file.xml from branch oneplus/$cpu..."
+          curl -LO --retry 5 --retry-delay 2 --retry-connrefused "https://raw.githubusercontent.com/OnePlusOSS/kernel_manifest/oneplus/$cpu/$file.xml"
+          mv "$file.xml" ".repo/manifests_fallback/${file}.xml"
+
+      - name: Set up KernelSU Next
+        run: |
+          cd kernel_workspace/kernel_platform
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s next
+          cd KernelSU-Next
+          KSU_VERSION=$(expr $(/usr/bin/git rev-list --count HEAD) "+" 10200)
+          echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
+          sed -i "s/DKSU_VERSION=11998/DKSU_VERSION=${KSU_VERSION}/" kernel/Makefile
+
+      - name: Set up susfs
+        run: |
+          cd kernel_workspace
+          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}
+          git clone https://github.com/WildPlusKernel/kernel_patches.git
+          cd kernel_platform
+          echo "正在拉取susfs补丁"
+          cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch ./common/
+          cp ../kernel_patches/next/scope_min_manual_hooks_v1.4.patch ./common/
+          cp ../kernel_patches/next/0001-kernel-implement-susfs-v1.5.8-KernelSU-Next-v1.0.8.patch ./KernelSU-Next/
+          cp ../susfs4ksu/kernel_patches/fs/* ./common/fs/
+          cp ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
+          # Apply patches
+          cd ./KernelSU-Next
+          patch -p1 < 0001-kernel-implement-susfs-v1.5.8-KernelSU-Next-v1.0.8.patch || true
+          cd ../common
+          GKI_V="${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}"
+          SUBLEVEL=$(grep '^SUBLEVEL *=' Makefile | head -n1 | cut -d= -f2 | tr -d ' ')
+          if [ "$GKI_V" == "android13-5.15" ] && [ "$SUBLEVEL" -lt 123 ]; then
+            echo "修复内核版本5.15.0到5.15.123可能存在的一些遗留问题"
+            curl -Lo fix_5.15.legacy.patch --retry 5 --retry-delay 2 --retry-connrefused https://raw.githubusercontent.com/Numbersf/Action-Build/SukiSU-Ultra/patches/fix_5.15.legacy
+            patch -p1 < fix_5.15.legacy.patch
+            echo "fix_5.15_patch完成"
+          fi
+          KERNEL_VERSION="${{ env.KERNEL_VERSION }}"
+          file="${{ github.event.inputs.FILE }}"
+          TRUSTY_EXISTS="false"
+          if [[ "$KERNEL_VERSION" == "6.6" ]]; then
+            if grep -qr 'common-modules/trusty' "$GITHUB_WORKSPACE/.repo/manifests_fallback/${file}.xml"; then
+              TRUSTY_EXISTS="true"
+            fi
+            echo "trusty_exists=$TRUSTY_EXISTS" >> $GITHUB_OUTPUT
+            if [[ "$TRUSTY_EXISTS" == "false" ]]; then
+              echo "修复内核版本6.6部分机型susfs的问题"
+              sed -i 's/-32,12 +32,38/-32,11 +32,37/g' 50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch
+              sed -i '/#include <trace\/hooks\/fs.h>/d' 50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch
+            fi
+          fi
+          echo "正在打susfs补丁"
+          patch -p1 < 50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch || true
+          echo "susfs_patch完成"
+          # Replace next_hooks.patch with syscall_hooks.patch
+          cp ../../kernel_patches/69_hide_stuff.patch ./
+          patch -p1 -F 3 < 69_hide_stuff.patch
+          patch -p1 --fuzz=3 < scope_min_manual_hooks_v1.4.patch
+
+      - name: Apply Convert HMBIRD_OGKI to HMBIRD_GKI
+        if: ${{ env.KERNEL_VERSION == '6.6' }}
+        run: |
+          cd kernel_workspace/kernel_platform/common
+          sed -i '1iobj-y += hmbird_patch.o' drivers/Makefile
+          wget https://github.com/Numbersf/Action-Build/raw/SukiSU-Ultra/patches/hmbird_patch.patch
+          echo "正在打OGKI转换GKI补丁"
+          patch -p1 -F 3 < hmbird_patch.patch
+          echo "OGKI转换GKI_patch完成"
+
+      - name: Apply new hook and add configuration
+        run: |
+          cd kernel_workspace/kernel_platform
+          echo "CONFIG_KSU=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_KPROBES_HOOK=n" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_SUS_OVERLAYFS=n" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS_SUS_SU=n" >> ./common/arch/arm64/configs/gki_defconfig
+          sed -i '2s/check_defconfig//' ./common/build.config.gki
+
+      - name: Add sched_ext
+        if: ${{ github.event.inputs.SCHED == 'true' }}
+        run: |
+          cd kernel_workspace/kernel_platform/
+          git clone https://github.com/HanKuCha/sched_ext.git
+          cp -r ./sched_ext/* ./common/kernel/sched
+          rm -rf ./sched_ext/.git
+          cd common/kernel/sched
+
+      - name: Custom Kernel Suffix if set
+        if: ${{ github.event.inputs.SUFFIX != '' }}
+        run: |
+          cd kernel_workspace
+          SUFFIX="${{ github.event.inputs.SUFFIX }}"
+          ANDROID_VERSION="${{ env.ANDROID_VERSION }}"
+          FAST_BUILD="${{ github.event.inputs.FAST_BUILD }}"
+          for path in \
+            kernel_platform/common/scripts/setlocalversion \
+            kernel_platform/msm-kernel/scripts/setlocalversion \
+            kernel_platform/external/dtc/scripts/setlocalversion; do
+            [ -f "$path" ] || continue
+            echo "Modifying: $path"
+            # 删除 -dirty
+            sed -i 's/ -dirty//g' "$path"
+            sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' "$path"
+            if grep -q 'KERNELVERSION.*scm_version' "$path"; then
+              echo "Detected NEW setlocalversion format"
+              sed -i "s|echo \"\${KERNELVERSION}.*scm_version}\"|echo \"\${KERNELVERSION}-${ANDROID_VERSION}-${SUFFIX}\"|" "$path"
+            elif grep -q 'echo "\$res"' "$path"; then
+              echo "Detected OLD setlocalversion format"
+              if [ "$FAST_BUILD" = "true" ]; then
+                echo "FAST_BUILD enabled: using static res"
+                sed -i "s/^res=.*/res=\"-${ANDROID_VERSION}-${SUFFIX}\"/" "$path"
+              else
+                echo "Standard build: injecting suffix via cut/echo"
+                if [[ -f ./kernel_platform/build_with_bazel.py ]]; then
+                  echo "使用官方脚本编译且当使用 build_with_bazel 时，可能受特殊符号数量限制，编译失败请修改"
+                  echo "When using the official script and building with build_with_bazel, the build may fail due to a limit on the number of special characters. Please modify the configuration if that happens."
+                fi
+                tac "$path" | sed "0,/echo \"\\\$res\"/s//res=\\\$(echo \\\$res | cut -d- -f1-2)-${SUFFIX}; echo \"\\\$res\";/" | tac > "$path.tmp" && mv "$path.tmp" "$path"
+              fi
+            else
+              echo "Unknown format, appending echo manually"
+              echo "echo \"\$res-${SUFFIX}\"" >> "$path"
+            fi
+            chmod +x "$path"
+          done
+          git add -A
+          git commit -m "Custom suffix & removed -dirty"
+
+      - name: Custom Kernel Random Suffix if empty
+        if: ${{ github.event.inputs.SUFFIX == '' }}
+        run: |
+          cd kernel_workspace
+          ANDROID_VERSION="${{ env.ANDROID_VERSION }}"
+          FAST_BUILD="${{ github.event.inputs.FAST_BUILD }}"
+          # 生成随机数字和随机hash后缀
+          RANDOM_DIGIT=$(od -An -N1 -tu1 < /dev/urandom | tr -d '[:space:]' | awk '{print $1 % 11}')
+          RANDOM_HASH=$(od -An -N7 -tx1 /dev/urandom | tr -d ' \n')
+          RANDOM_SUFFIX="${RANDOM_DIGIT}-o-g${RANDOM_HASH}"
+          for path in \
+            kernel_platform/common/scripts/setlocalversion \
+            kernel_platform/msm-kernel/scripts/setlocalversion \
+            kernel_platform/external/dtc/scripts/setlocalversion; do
+            [ -f "$path" ] || continue
+            echo "Modifying: $path"
+            # 删除 -dirty
+            sed -i 's/ -dirty//g' "$path"
+            sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' "$path"
+            if grep -q 'KERNELVERSION.*scm_version' "$path"; then
+              echo "Detected NEW setlocalversion format"
+              sed -i "s|echo \"\${KERNELVERSION}.*scm_version}\"|echo \"\${KERNELVERSION}-${ANDROID_VERSION}-${RANDOM_SUFFIX}\"|" "$path"
+            elif grep -q 'echo "\$res"' "$path"; then
+              echo "Detected OLD setlocalversion format"
+              if [ "$FAST_BUILD" = "true" ]; then
+                echo "FAST_BUILD enabled: using static res with random suffix"
+                sed -i "s/^res=.*/res=\"-${ANDROID_VERSION}-${RANDOM_SUFFIX}\"/" "$path"
+              else
+                echo "Standard build: injecting random suffix via cut/echo"
+                tac "$path" | sed "0,/echo \"\\\$res\"/s//res=\\\$(echo \\\$res | cut -d- -f1-2)-${RANDOM_SUFFIX}; echo \"\\\$res\";/" | tac > "$path.tmp" && mv "$path.tmp" "$path"
+              fi
+            else
+              echo "Unknown format, appending echo manually"
+              echo "echo \"\$res-${RANDOM_SUFFIX}\"" >> "$path"
+            fi
+            chmod +x "$path"
+          done
+          git add -A
+          git commit -m "Random suffix & remove -dirty"
+
+      - name: Custom BUILD_TIME
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.BUILD_TIME }}" ]; then
+            DATESTR="${{ github.event.inputs.BUILD_TIME }}"
+            echo "KBUILD_BUILD_TIMESTAMP=${DATESTR}" >> "$GITHUB_ENV"
+            echo "KBUILD_BUILD_VERSION=1" >> "$GITHUB_ENV"
+            cd kernel_workspace/kernel_platform/
+            for f in common/scripts/mkcompile_h msm-kernel/scripts/mkcompile_h; do
+              if [ -f "$f" ]; then
+                echo "Patching mkcompile_h with BUILD_TIME=$DATESTR"
+                if grep -q 'UTS_VERSION=' "$f"; then
+                  perl -pi -e "s{UTS_VERSION=\"\\\$\\(.*?\\)\"}{UTS_VERSION=\"#1 SMP PREEMPT $DATESTR\"}" "$f"
+                else
+                  perl -0777 -pi -e "s{cat <<EOF}{cat <<EOF\n#undef UTS_VERSION\n#define UTS_VERSION \"#1 SMP PREEMPT $DATESTR\" } unless /UTS_VERSION/" "$f"
+                fi
+              fi
+            done
+          fi
+
+      - name: Enable lto=thin For FAST
+        if: ${{ (env.KERNEL_VERSION == '5.10' || env.KERNEL_VERSION == '5.15') && github.event.inputs.FAST_BUILD == 'true' }}
+        run: |
+          cd kernel_workspace/kernel_platform
+          DEFCONFIG=./common/arch/arm64/configs/gki_defconfig
+          echo "Enabling ThinLTO in $DEFCONFIG"
+          # 开启 CONFIG_LTO
+          sed -i 's/^CONFIG_LTO=n/CONFIG_LTO=y/' "$DEFCONFIG"
+          # 替换 FULL/NONE 为 THIN，防止冲突
+          sed -i 's/^CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_THIN=y/' "$DEFCONFIG"
+          sed -i 's/^CONFIG_LTO_CLANG_NONE=y/CONFIG_LTO_CLANG_THIN=y/' "$DEFCONFIG"
+          # 添加 THIN（若未设置）
+          grep -q '^CONFIG_LTO_CLANG_THIN=y' "$DEFCONFIG" || echo 'CONFIG_LTO_CLANG_THIN=y' >> "$DEFCONFIG"
+
+      - name: 🔨 Build Kernel FAST
+        if: ${{ github.event.inputs.FAST_BUILD == 'true' }}
+        id: fast_build
+        run: |
+          echo "🏗️ Starting fast kernel compilation with ThinLTO..."
+          KERNEL_VERSION="${{ env.KERNEL_VERSION }}"
+          case "$KERNEL_VERSION" in
+            "6.6")
+              export KBUILD_BUILD_TIMESTAMP="Wed Jun 18 13:44:55 UTC 2025"
+              CLANG_PATH="clang-r510928"
+              CLANG_DIR="prebuilts"
+              USE_LLVM_IAS=""
+              ;;
+            "6.1")
+              export KBUILD_BUILD_TIMESTAMP="Wed Jun 18 13:44:55 UTC 2025"
+              CLANG_PATH="clang-r510928"
+              CLANG_DIR="prebuilts"
+              USE_LLVM_IAS=""
+              ;;
+            "5.15")
+              export KBUILD_BUILD_TIMESTAMP="Wed Jun 18 13:44:55 UTC 2025"
+              CLANG_PATH="clang-r450784e"
+              CLANG_DIR="prebuilts"
+              USE_LLVM_IAS=""
+              ;;
+            "5.10")
+              export KBUILD_BUILD_TIMESTAMP="Wed Jun 18 13:44:55 UTC 2025"
+              CLANG_PATH="clang-r416183b"
+              CLANG_DIR="prebuilts-master"
+              USE_LLVM_IAS="LLVM_IAS=1"
+              ;;
+            "5.4")
+              export KBUILD_BUILD_TIMESTAMP="Wed Jun 18 13:44:55 UTC 2025"
+              CLANG_PATH="clang-r377782d"
+              CLANG_DIR="prebuilts"
+              USE_LLVM_IAS="LLVM_IAS=1"
+              ;;
+            *)
+              echo "fallback=true" >> "$GITHUB_OUTPUT"
+              echo "⚠️ Current kernel version \"$KERNEL_VERSION\" does not have a corresponding clang toolchain, falling back to using the official build script with ThinLTO"
+              cd kernel_workspace
+              export LTO=thin
+              export KCFLAGS="-O2 -flto=thin"
+              ./kernel_platform/oplus/build/oplus_build_kernel.sh ${{ env.CPUD }} ${{ env.BUILD_METHOD }}
+              ccache -s
+              echo "✅ Kernel compilation completed with fallback and ThinLTO"
+              exit 0
+              ;;
+          esac
+          export PATH="$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/$CLANG_DIR/clang/host/linux-x86/$CLANG_PATH/bin:$PATH"
+          export PATH="/usr/lib/ccache:$PATH"
+          export CC="ccache clang"
+          cd kernel_workspace/kernel_platform/common
+      
+          # Apply Custom Patches
+          echo "Applying custom and experimental patches..."
+          # Step 1: Modify arch/Kconfig (Add Polly option)
+          sed -i "/config CFI_PERMISSIVE/i \
+          config LLVM_POLLY\n\
+              bool \"Enable LLVM's polyhedral loop optimizer (Polly)\"\n\
+              help\n\
+                This option enables LLVM's polyhedral loop optimizer known as Polly.\n\
+                Polly is able to optimize various loops throughout the kernel for\n\
+                maximum cache locality. This requires an LLVM toolchain explicitly\n\
+                compiled with Polly support.\n" arch/Kconfig
+      
+          # Step 2: Modify init/Kconfig (Change default optimization to O3)
+          sed -i 's/ifdef CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE/ifdef CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3\nKBUILD_CFLAGS += -O3\nKBUILD_RUSTFLAGS += -Copt-level=3\nelse ifdef CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE/' Makefile
+      
+          cat <<'EOF' > /tmp/kconfig_changes.txt
+          default CC_OPTIMIZE_FOR_PERFORMANCE_O3
+          config CC_OPTIMIZE_FOR_PERFORMANCE_O3
+              bool "Optimize more for performance (-O3)"
+              help
+                Choosing this option will pass "-O3" to your compiler to optimize
+                the kernel yet more for performance.
+          EOF
+          sed -i '/default CC_OPTIMIZE_FOR_PERFORMANCE/d' init/Kconfig
+          sed -i '/prompt "Compiler optimization level"/r /tmp/kconfig_changes.txt' init/Kconfig
+      
+          # Step 3: Create a temporary file with the correct content for Makefile
+          cat <<'EOF' > /tmp/polly_flags.txt
+          # Enable Polly Optimizer (Full Aggressive Set)
+          ifdef CONFIG_LLVM_POLLY
+             KBUILD_CFLAGS += -fvectorize -funroll-loops -mllvm -polly \
+                    -mllvm -polly-run-inliner \
+                    -mllvm -polly-ast-use-context \
+                    -mllvm -polly-detect-keep-going \
+                    -mllvm -polly-invariant-load-hoisting \
+                    -mllvm -polly-vectorizer=stripmine
+      
+             ifeq ($(shell test $(CONFIG_CLANG_VERSION) -gt 130000; echo $$?),0)
+             KBUILD_CFLAGS += -mllvm -polly-loopfusion-greedy=1 \
+                    -mllvm -polly-reschedule=1 \
+                    -mllvm -polly-postopts=1 \
+                    -mllvm -polly-num-threads=0 \
+                    -mllvm -polly-omp-backend=LLVM \
+                    -mllvm -polly-scheduling=dynamic \
+                    -mllvm -polly-scheduling-chunksize=1
+             else
+             KBUILD_CFLAGS += -mllvm -polly-opt-fusion=max
+             endif
+             ifdef CONFIG_LD_DEAD_CODE_DATA_ELIMINATION
+             POLLY_FLAGS += -mllvm -polly-run-dce
+             endif
+          endif
+          EOF
+      
+          # Step 4: Insert the content of the temporary file into Makefile
+          sed -i '/KBUILD_RUSTFLAGS += -Coverflow-checks/r /tmp/polly_flags.txt' Makefile
+          echo "Polly source modifications applied successfully using robust method."
+      
+          # Step 5: Add additional configurations to gki_defconfig
+          DEFCONFIG_PATH="./arch/arm64/configs/gki_defconfig"
+          echo "# LLVM Polly Optimizer" >> "${DEFCONFIG_PATH}"
+          echo "CONFIG_LLVM_POLLY=y" >> "${DEFCONFIG_PATH}"
+          echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3=y" >> "${DEFCONFIG_PATH}"
+          echo "CONFIG_LD_DEAD_CODE_DATA_ELIMINATION=y" >> "${DEFCONFIG_PATH}"
+          echo "Custom patches applied successfully."
+      
+          # Proceed with compilation
+          make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC="ccache clang" RUSTC=../../prebuilts/rust/linux-x86/1.73.0b/bin/rustc PAHOLE=../../prebuilts/kernel-build-tools/linux-x86/bin/pahole LD=ld.lld HOSTLD=ld.lld O=out KCFLAGS+="-O2 -flto=thin" ${USE_LLVM_IAS} gki_defconfig all
+          ccache -s
+          echo "✅ Fast kernel compilation completed with ThinLTO"
+
+      - name: 🔨 Build Kernel (Non-Fast)
+        if: ${{ github.event.inputs.FAST_BUILD != 'true' }}
+        run: |
+          echo "🏗️ Starting kernel compilation with official build script and ThinLTO..."
+          cd kernel_workspace
+          export LTO=thin
+          export KCFLAGS="-O2 -flto=thin"
+          ./kernel_platform/oplus/build/oplus_build_kernel.sh ${{ env.CPUD }} ${{ env.BUILD_METHOD }}
+          ccache -s
+          echo "✅ Kernel compilation completed with ThinLTO"
+
+      - name: Make AnyKernel3
+        run: |
+          git clone https://github.com/Numbersf/AnyKernel3 --depth=1
+          rm -rf ./AnyKernel3/.git
+          mkdir -p kernel_workspace/kernel_platform/out/FinalImageFind/
+          dir1=""
+          dir2=""
+          image_path=$(find "./kernel_workspace/kernel_platform/common/out/" -name "Image" | head -n 1)
+          if [ -n "$image_path" ]; then
+            dir1=$(dirname "$image_path")/
+            echo "使用 make 编译的统一路径，成功找到 Image 文件"
+          else
+            image_path=$(find "./kernel_workspace/kernel_platform/out/" -name "Image" | head -n 1)
+            if [ -n "$image_path" ]; then
+              dir2=$(dirname "$image_path")/
+              echo "使用官方脚本编译，成功找到 Image 文件"
+            else
+              echo "未找到 Image 文件，构建失败" >&2
+              exit 1
+            fi
+          fi
+          # 复制 Image 到 AnyKernel3
+          if [ -n "$image_path" ] && [ -f "$image_path" ]; then
+            echo "Image file finally located at: $image_path"
+            cp "$image_path" ./AnyKernel3/Image
+            cp "$image_path" kernel_workspace/kernel_platform/out/FinalImageFind/Image
+          fi
+          # 使用官方脚本编译的 sm8750，选择性复制其它镜像文件
+          if [ -n "$dir2" ] && [ "${{ env.CPU }}" = "sm8750" ] && [ "${{ github.event.inputs.FAST_BUILD }}" = "false" ]; then
+            echo "当前正在使用官方脚本构建 sm8750，需额外复制一些其它镜像文件：dtbo.img、system_dlkm.img、vendor_dlkm.img、vendor_boot.img。请注意，如果你在刷完官方脚本构建后想换成极速构建，请还原这些分区！"
+            echo "You are currently building sm8750 with the official script. Additional image files will be copied: dtbo.img, system_dlkm.img, vendor_dlkm.img, vendor_boot.img. Please note: If you switch to fast build after flashing this build, make sure to restore these partitions!"
+            for file in dtbo.img system_dlkm.erofs.img vendor_dlkm.img vendor_boot.img; do
+              if [ -f "$dir2$file" ]; then
+                target_name="$file"
+                # 特殊处理 system_dlkm.erofs.img 的目标名
+                if [ "$file" = "system_dlkm.erofs.img" ]; then
+                  target_name="system_dlkm.img"
+                fi
+                cp "$dir2$file" "./AnyKernel3/$target_name"
+              else
+                echo "$file 不存在，跳过复制"
+              fi
+            done
+          fi
+
+      - name: Download Latest SUSFS Module from CI
+        if: ${{ github.event.inputs.SUSFS_CI == 'CI' }}
+        continue-on-error: true
+        run: |
+          LATEST_RUN_ID=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/sidex15/susfs4ksu-module/actions/runs?status=success" | \
+            jq -r '.workflow_runs[] | select(.head_branch == "v1.5.2+") | .id' | head -n 1)
+          if [ -z "$LATEST_RUN_ID" ]; then
+            echo "No successful run found for branch v1.5.2+"
+          else
+            ARTIFACT_URL=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/sidex15/susfs4ksu-module/actions/runs/$LATEST_RUN_ID/artifacts" | jq -r '.artifacts[0].archive_download_url')
+            if [ -n "$ARTIFACT_URL" ]; then
+              curl -L -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -o ksu_module_susfs_1.5.2+_CI.zip "$ARTIFACT_URL"
+              cp ksu_module_susfs_1.5.2+_CI.zip ./AnyKernel3/
+            else
+              echo "Failed to fetch artifact URL"
+            fi
+          fi
+
+      - name: Download Latest SUSFS Module from Release
+        if: ${{ github.event.inputs.SUSFS_CI == 'Release' }}
+        continue-on-error: true
+        run: |
+          wget -O ksu_module_susfs_1.5.2+_Release.zip https://github.com/sidex15/ksu_module_susfs/releases/latest/download/ksu_module_susfs_1.5.2+.zip
+          cp ksu_module_susfs_1.5.2+_Release.zip ./AnyKernel3/
+
+      - name: Auto map FILE to Android version by manifest
+        id: file_clean
+        run: |
+          file="${{ github.event.inputs.FILE }}"
+          cpu="${{ env.CPU }}"
+          xml=".repo/manifests_fallback/${file}.xml"
+          cd $GITHUB_WORKSPACE
+          # 去掉末尾的 _x（只删一个）
+          file_base=$(echo "$file" | sed -E 's/_[a-z]$//')
+          # 提取 revision 并解析 Android 版本
+          revision_full=$(grep -oP '<project[^>]*name="android_kernel[^"]*"[^>]*revision="\K[^"]+' "$xml" | head -n1 || true)
+          if [ -n "$revision_full" ]; then
+            android_ver=$(echo "$revision_full" | grep -oP '_v?_?\K([0-9]+\.[0-9]+(?:\.[0-9]+)?)' || true)
+            if [ -n "$android_ver" ]; then
+              clean_file="${file_base}_Android${android_ver}"
+            else
+              clean_file="${file_base}_AndroidUnknown"
+            fi
+          else
+            clean_file="${file_base}_AndroidUnknown"
+          fi
+          echo "value=$clean_file" >> "$GITHUB_OUTPUT"
+
+      - name: Upload AnyKernel3
+        uses: actions/upload-artifact@v4
+        with:
+          name: AnyKernel3_KernelSU_Next_${{ env.KSUVER }}_${{ steps.file_clean.outputs.value }}${{ steps.suffix.outputs.value }}
+          path: ./AnyKernel3/*
