@@ -383,31 +383,7 @@ jobs:
             patch -p1 < fix_5.15.legacy.patch
             echo "Applied fix_5.15 patch"
           fi
-          # Ensure susfs_task_state is added to struct task_struct
-          SCHED_H="./include/linux/sched.h"
-          if ! grep -q "susfs_task_state" "$SCHED_H"; then
-            echo "Adding susfs_task_state to struct task_struct in $SCHED_H"
-            sed -i '/struct task_struct {/a\        unsigned long susfs_task_state;' "$SCHED_H"
-          fi
-          # Ensure TASK_STRUCT_NON_ROOT_USER_APP_PROC is defined
-          SUSFS_H="./include/linux/susfs.h"
-          if [ -f "$SUSFS_H" ] && ! grep -q "TASK_STRUCT_NON_ROOT_USER_APP_PROC" "$SUSFS_H"; then
-            echo "Adding TASK_STRUCT_NON_ROOT_USER_APP_PROC to $SUSFS_H"
-            echo "#define TASK_STRUCT_NON_ROOT_USER_APP_PROC (1UL << 0)" >> "$SUSFS_H"
-          elif [ ! -f "$SUSFS_H" ]; then
-            echo "Creating $SUSFS_H with TASK_STRUCT_NON_ROOT_USER_APP_PROC definition"
-            cat <<EOF > "$SUSFS_H"
-#ifndef _LINUX_SUSFS_H
-#define _LINUX_SUSFS_H
-#define TASK_STRUCT_NON_ROOT_USER_APP_PROC (1UL << 0)
-#endif
-EOF
-          fi
-          # Debug patch application
-          echo "Listing modified headers"
-          cat ./include/linux/sched.h | grep susfs_task_state || echo "susfs_task_state not found in sched.h"
-          cat ./include/linux/susfs.h | grep TASK_STRUCT_NON_ROOT_USER_APP_PROC || echo "TASK_STRUCT_NON_ROOT_USER_APP_PROC not found in susfs.h"
-          echo "Applied susfs patches"
+          
       - name: Apply Convert HMBIRD_OGKI to HMBIRD_GKI
         if: ${{ env.KERNEL_VERSION == '6.6' }}
         run: |
