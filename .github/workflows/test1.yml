@@ -82,6 +82,7 @@ jobs:
       android_version: ${{ steps.validate.outputs.android_version }}
       kernel_version: ${{ steps.validate.outputs.kernel_version }}
       build_method: ${{ steps.validate.outputs.build_method }}
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -135,6 +136,15 @@ jobs:
           echo "android_version=$ANDROID_VERSION" >> $GITHUB_OUTPUT
           echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_OUTPUT
           echo "build_method=$BUILD_METHOD" >> $GITHUB_OUTPUT
+
+      - name: Set Matrix Configuration
+        id: set-matrix
+        run: |
+          set -e
+          FAST_BUILD="${{ github.event.inputs.FAST_BUILD }}"
+          MATRIX="{\"fast_build\":[$FAST_BUILD]}"
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          echo "✅ Matrix set: $MATRIX"
 
       - name: Install Minimal Dependencies
         run: |
@@ -225,14 +235,12 @@ jobs:
           compression-level: 0
 
   build:
-    name: Build Kernel ${{ matrix.fast_build && '[FAST]' || '' }}
+    name: Build Kernel ${{ matrix.fast_build && '[FAST]' || '[STANDARD]' }}
     needs: setup
     runs-on: ubuntu-latest
     strategy:
-      matrix:
-        fast_build: [true, false]
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
       fail-fast: false
-    if: ${{ github.event.inputs.FAST_BUILD == matrix.fast_build || github.event.inputs.FAST_BUILD == 'true' }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
