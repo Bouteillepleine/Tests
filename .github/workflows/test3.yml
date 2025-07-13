@@ -1,3 +1,4 @@
+```yaml
 name: Build KernelSU Next SUSFS All
 on:
   workflow_dispatch:
@@ -328,15 +329,31 @@ jobs:
           git clone https://github.com/WildPlusKernel/kernel_patches.git
           cd kernel_platform
           echo "Fetching susfs patches"
-          cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch ./common/
-          cp ../kernel_patches/next/scope_min_manual_hooks_v1.4.patch ./common/
-          cp ../kernel_patches/next/0001-kernel-implement-susfs-v1.5.8-KernelSU-Next-v1.0.8.patch ./KernelSU-Next/
+          CONFIG="$GITHUB_WORKSPACE/kernel_workspace"
+          susfs_version="v1.5.9"
+          # Copy and apply susfs patches
+          cp ../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ./common/
+          cp ../kernel_patches/next/susfs_fix_patches/$susfs_version/fix_apk_sign.c.patch ./common/
+          cp ../kernel_patches/next/susfs_fix_patches/$susfs_version/fix_core_hook.c.patch ./common/
+          cp ../kernel_patches/next/susfs_fix_patches/$susfs_version/fix_selinux.c.patch ./common/
+          cp ../kernel_patches/next/susfs_fix_patches/$susfs_version/fix_ksud.c.patch ./common/
+          cp ../kernel_patches/next/susfs_fix_patches/$susfs_version/fix_rules.c.patch ./common/
+          cp ../kernel_patches/next/scope_min_manual_hooks_v1.4.patch ./common/manual_hooks.patch
+          cp ../kernel_patches/69_hide_stuff.patch ./common/
           cp ../susfs4ksu/kernel_patches/fs/* ./common/fs/
           cp ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
-          # Apply patches
-          cd ./KernelSU-Next
-          patch -p1 < 0001-kernel-implement-susfs-v1.5.8-KernelSU-Next-v1.0.8.patch || true
-          cd ../common
+          # Apply patches in common directory
+          cd ./common
+          echo "Applying KSUN Hooks..."
+          patch -p1 --forward --fuzz=3 < manual_hooks.patch
+          patch -p1 --forward --fuzz=3 < 69_hide_stuff.patch
+          patch -p1 --forward --fuzz=3 < 10_enable_susfs_for_ksu.patch
+          patch -p1 --forward --fuzz=3 < fix_apk_sign.c.patch
+          patch -p1 --forward --fuzz=3 < fix_core_hook.c.patch
+          patch -p1 --forward --fuzz=3 < fix_selinux.c.patch
+          patch -p1 --forward --fuzz=3 < fix_ksud.c.patch
+          patch -p1 --forward --fuzz=3 < fix_rules.c.patch
+          # Apply legacy fix for android13-5.15
           GKI_V="${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}"
           SUBLEVEL=$(grep '^SUBLEVEL *=' Makefile | head -n1 | cut -d= -f2 | tr -d ' ')
           if [ "$GKI_V" == "android13-5.15" ] && [ "$SUBLEVEL" -lt 123 ]; then
@@ -345,27 +362,26 @@ jobs:
             patch -p1 < fix_5.15.legacy.patch
             echo "Applied fix_5.15 patch"
           fi
-          KERNEL_VERSION="${{ env.KERNEL_VERSION }}"
-          file="${{ github.event.inputs.FILE }}"
-          TRUSTY_EXISTS="false"
-          if [[ "$KERNEL_VERSION" == "6.6" ]]; then
-            if grep -qr 'common-modules/trusty' "$GITHUB_WORKSPACE/.repo/manifests_fallback/${file}.xml"; then
-              TRUSTY_EXISTS="true"
-            fi
-            echo "trusty_exists=$TRUSTY_EXISTS" >> $GITHUB_OUTPUT
-            if [[ "$TRUSTY_EXISTS" == "false" ]]; then
-              echo "Fixing susfs issues for some kernel version 6.6 devices"
-              sed -i 's/-32,12 +32,38/-32,11 +32,37/g' 50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch
-              sed -i '/#include <trace\/hooks\/fs.h>/d' 50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch
-            fi
+          # Ensure susfs_task_state is added to struct task_struct
+          SCHED_H="./include/linux/sched.h"
+          if ! grep -q "susfs_task_state" "$SCHED_H"; then
+            echo "Adding susfs_task_state to struct task_struct in $SCHED_H"
+            sed -i '/struct task_struct {/a\        unsigned long susfs_task_state;' "$SCHED_H"
           fi
-          echo "Applying susfs patch"
-          patch -p1 < 50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch || true
-          echo "Applied susfs patch"
-          # Replace next_hooks.patch with syscall_hooks.patch
-          cp ../../kernel_patches/69_hide_stuff.patch ./
-          patch -p1 -F 3 < 69_hide_stuff.patch
-          patch -p1 --fuzz=3 < scope_min_manual_hooks_v1.4.patch
+          # Ensure TASK_STRUCT_NON_ROOT_USER_APP_PROC is defined
+          SUSFS_H="./include/linux/susfs.h"
+          if [ -f "$SUSFS_H" ] && ! grep -q "TASK_STRUCT_NON_ROOT_USER_APP_PROC" "$SUSFS_H"; then
+            echo "Adding TASK_STRUCT_NON_ROOT_USER_APP_PROC to $SUSFS_H"
+            echo "#define TASK_STRUCT_NON_ROOT_USER_APP_PROC (1UL << 0)" >> "$SUSFS_H"
+          elif [ ! -f "$SUSFS_H" ]; then
+            echo "Creating $SUSFS_H with TASK_STRUCT_NON_ROOT_USER_APP_PROC definition"
+            cat <<EOF > "$SUSFS_H"
+         fi
+          # Debug patch application
+          echo "Listing modified headers"
+          cat ./include/linux/sched.h | grep susfs_task_state || echo "susfs_task_state not found in sched.h"
+          cat ./include/linux/susfs.h | grep TASK_STRUCT_NON_ROOT_USER_APP_PROC || echo "TASK_STRUCT_NON_ROOT_USER_APP_PROC not found in susfs.h"
+          echo "Applied susfs patches"
       - name: Apply Convert HMBIRD_OGKI to HMBIRD_GKI
         if: ${{ env.KERNEL_VERSION == '6.6' }}
         run: |
@@ -692,7 +708,7 @@ jobs:
             dir1=$(dirname "$image_path")/
             echo "Found Image file using make compilation path"
           else
-            image_path=$(find "./kernel_workspace/kernel_platform/out/" -name "Image" | head -n 1)
+            image_path=$(find "./kernel_workflow_platform/out/" -name "Image" | head -n 1)
             if [ -n "$image_path" ]; then
               dir2=$(dirname "$image_path")/
               echo "Found Image file using official script compilation"
