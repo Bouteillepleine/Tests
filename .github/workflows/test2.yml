@@ -244,7 +244,7 @@ jobs:
           echo "Selected KPM: ${{ github.event.inputs.KPM }}"
           echo "Selected FAST_BUILD: ${{ github.event.inputs.FAST_BUILD }}"
           echo "Selected SCHED: ${{ github.event.inputs.SCHED }}"
-          echo "Selected ZRAM: ${{ github 定 github.event.inputs.ZRAM }}"
+          echo "Selected ZRAM: ${{ github.event.inputs.ZRAM }}"
 
       - name: Install Dependencies
         run: |
@@ -319,7 +319,7 @@ jobs:
 
             echo "Modifying: $path"
 
-            # 删除 -dirty
+            # Remove -dirty
             sed -i 's/ -dirty//g' "$path"
             sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' "$path"
 
@@ -357,7 +357,7 @@ jobs:
           ANDROID_VERSION="${{ env.ANDROID_VERSION }}"
           FAST_BUILD="${{ github.event.inputs.FAST_BUILD }}"
 
-          # 生成随机数字和随机hash
+          # Generate random digit and random hash
           RANDOM_DIGIT=$(od -An -N1 -tu1 < /dev/urandom | tr -d '[:space:]' | awk '{print $1 % 11}')
           RANDOM_HASH=$(od -An -N7 -tx1 /dev/urandom | tr -d ' \n')
           RANDOM_SUFFIX="${RANDOM_DIGIT}-o-g${RANDOM_HASH}"
@@ -371,7 +371,7 @@ jobs:
 
             echo "Modifying: $path"
 
-            # 删除 -dirty
+            # Remove -dirty
             sed -i 's/ -dirty//g' "$path"
             sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' "$path"
 
@@ -412,30 +412,23 @@ jobs:
       - name: Add SukiSU Ultra
         run: |
           cd kernel_workspace/kernel_platform
-
           META="${{ github.event.inputs.KSU_META }}"
           BRANCH_NAME="${META%%/*}"
           CUSTOM_TAG="${META#*/}"
           echo "Branch Name: $BRANCH_NAME"
           echo "Custom Version Identifier: $CUSTOM_TAG"
-
           curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "$BRANCH_NAME"
           cd ./KernelSU
-
           KSU_API_VERSION=$(curl -fsSL "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/$BRANCH_NAME/kernel/Makefile" | \
             grep -m1 "KSU_VERSION_API :=" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
-
           if [[ -z "$KSU_API_VERSION" || "$(printf '%s\n' "$KSU_API_VERSION" "3.1.7" | sort -V | head -n1)" != "3.1.7" ]]; then
             KSU_API_VERSION="3.1.7"
           fi
-
           echo "KSU_API_VERSION=$KSU_API_VERSION" >> $GITHUB_ENV
-
           VERSION_DEFINITIONS=$(cat << 'EOF'
           define get_ksu_version_full
           v$1-CUSTOM_TAG@BRANCH_NAME
           endef
-
           KSU_VERSION_API := KSU_API_VERSION
           KSU_VERSION_FULL := vKSU_API_VERSION-CUSTOM_TAG@BRANCH_NAME
           EOF
@@ -444,20 +437,16 @@ jobs:
             -e "s/CUSTOM_TAG/$CUSTOM_TAG/g" \
             -e "s/BRANCH_NAME/$BRANCH_NAME/g" \
             -e "s/KSU_API_VERSION/$KSU_API_VERSION/g")
-
           sed -i '/define get_ksu_version_full/,/endef/d' kernel/Makefile
           sed -i '/KSU_VERSION_API :=/d' kernel/Makefile
           sed -i '/KSU_VERSION_FULL :=/d' kernel/Makefile
-
           awk -v def="$VERSION_DEFINITIONS" '
             /REPO_OWNER :=/ {print; print def; inserted=1; next}
             1
             END {if (!inserted) print def}
           ' kernel/Makefile > kernel/Makefile.tmp && mv kernel/Makefile.tmp kernel/Makefile
-
           KSU_VERSION=$(expr $(git rev-list --count main 2>/dev/null || echo 13000) + 10700)
           echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
-
           echo "::group:: Final Makefile Version Information Preview"
           grep -A10 "REPO_OWNER" kernel/Makefile
           grep "KSU_VERSION_FULL" kernel/Makefile
@@ -473,7 +462,6 @@ jobs:
           cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch ./common/
           cp ../susfs4ksu/kernel_patches/fs/* ./common/fs/
           cp ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
-
           if [ "${{ github.event.inputs.ZRAM }}" = "true" ]; then
             echo "Fetching zram Patch"
             cp -r ../SukiSU_patch/other/zram/lz4k/include/linux/* ./common/include/linux/
@@ -481,11 +469,9 @@ jobs:
             cp -r ../SukiSU_patch/other/zram/lz4k/crypto/* ./common/crypto/
             cp -r ../SukiSU_patch/other/zram/lz4k_oplus ./common/lib/
           fi
-
           cd ./common
           GKI_V="${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}"
           SUBLEVEL=$(grep '^SUBLEVEL *=' Makefile | head -n1 | cut -d= -f2 | tr -d ' ')
-
           if [ "$GKI_V" == "android13-5.15" ] && [ "$SUBLEVEL" -lt 123 ]; then
             echo "Fix Some Legacy Issues That May Exist in Kernel Versions 5.15.0 to 5.15.123"
             curl -Lo fix_5.15.legacy.patch --retry 5 --retry-delay 2 --retry-connrefused https://raw.githubusercontent.com/Numbersf/Action-Build/SukiSU-Ultra/patches/fix_5.15.legacy
@@ -500,7 +486,6 @@ jobs:
               TRUSTY_EXISTS="true"
             fi
             echo "trusty_exists=$TRUSTY_EXISTS" >> $GITHUB_OUTPUT
-
             if [[ "$TRUSTY_EXISTS" == "false" ]]; then
               echo "Fix susfs Issues for Some Models in Kernel Version 6.6"
               sed -i 's/-32,12 +32,38/-32,11 +32,37/g' 50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${KERNEL_VERSION}.patch
@@ -556,16 +541,13 @@ jobs:
           cd kernel_workspace/kernel_platform
           CONFIG_FILE=./common/arch/arm64/configs/gki_defconfig
           KERNEL_VERSION="${{ env.KERNEL_VERSION }}"
-
-          # SukiSU Ultra配置
+          # SukiSU Ultra configuration
           echo "CONFIG_KSU=y" >> "$CONFIG_FILE"
-
-          # KPM配置
+          # KPM configuration
           if [ "${{ github.event.inputs.KPM }}" = "true" ]; then
             echo "CONFIG_KPM=y" >> "$CONFIG_FILE"
           fi
-
-          # VFS配置
+          # VFS configuration
           if [ "${{ github.event.inputs.VFS }}" = "true" ]; then
             echo "CONFIG_KSU_SUSFS_SUS_SU=n" >> "$CONFIG_FILE"
             echo "CONFIG_KSU_MANUAL_HOOK=y" >> "$CONFIG_FILE"
@@ -573,8 +555,7 @@ jobs:
             echo "CONFIG_KSU_SUSFS_SUS_SU=y" >> "$CONFIG_FILE"
             echo "CONFIG_KPROBES=y" >> "$CONFIG_FILE"
           fi
-
-          # SUSFS配置
+          # SUSFS configuration
           echo "CONFIG_KSU_SUSFS=y" >> "$CONFIG_FILE"
           echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> "$CONFIG_FILE"
           echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> "$CONFIG_FILE"
@@ -590,26 +571,22 @@ jobs:
           echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> "$CONFIG_FILE"
           echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> "$CONFIG_FILE"
           echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> "$CONFIG_FILE"
-
-          # TMPFS配置*
+          # TMPFS configuration
           echo "CONFIG_TMPFS_XATTR=y" >> "$CONFIG_FILE"
           echo "CONFIG_TMPFS_POSIX_ACL=y" >> "$CONFIG_FILE"
-
-          # BBR配置*
+          # BBR configuration
           echo "CONFIG_TCP_CONG_ADVANCED=y" >> "$CONFIG_FILE"
           echo "CONFIG_TCP_CONG_BBR=y" >> "$CONFIG_FILE"
           echo "CONFIG_NET_SCH_FQ=y" >> "$CONFIG_FILE"
           echo "CONFIG_TCP_CONG_BIC=n" >> "$CONFIG_FILE"
           echo "CONFIG_TCP_CONG_WESTWOOD=n" >> "$CONFIG_FILE"
           echo "CONFIG_TCP_CONG_HTCP=n" >> "$CONFIG_FILE"
-
-          # ECN配置*
+          # ECN configuration
           echo "CONFIG_IP_ECN=y" >> "$CONFIG_FILE"
           echo "CONFIG_TCP_ECN=y" >> "$CONFIG_FILE"
           echo "CONFIG_IPV6_ECN=y" >> "$CONFIG_FILE"
           echo "CONFIG_IP_NF_TARGET_ECN=y" >> "$CONFIG_FILE"
-
-          # ZRAM配置*
+          # ZRAM configuration
           if [ "${{ github.event.inputs.ZRAM }}" = "true" ]; then
             echo "CONFIG_CRYPTO_LZ4HC=y" >> "$CONFIG_FILE"
             echo "CONFIG_CRYPTO_LZ4K=y" >> "$CONFIG_FILE"
@@ -618,8 +595,7 @@ jobs:
             echo "CONFIG_CRYPTO_LZ4K_OPLUS=y" >> "$CONFIG_FILE"
             echo "CONFIG_ZRAM_WRITEBACK=y" >> "$CONFIG_FILE"
           fi
-
-          # 移除构建审查
+          # Remove build check
           sed -i 's/check_defconfig//' ./common/build.config.gki
 
       - name: Additional Configurations
