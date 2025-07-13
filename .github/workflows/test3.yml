@@ -76,7 +76,7 @@ jobs:
       - name: Validate Input Combinations
         id: set_outputs
         run: |
-          echo "🔧 Validating input combinations..."
+          echo "Validating input combinations..."
           FILE="${{ github.event.inputs.FILE }}"
           
           # Define valid combinations with base model only (no _v/_t/_u...)
@@ -125,7 +125,7 @@ jobs:
           }
           # Try to resolve FILE to a valid combination
           COMBINATION="$(get_combination "$FILE")" || {
-            echo "❌ Unknown FILE: $FILE"
+            echo "Unknown FILE: $FILE"
             echo "Valid base models:"
             for model in "${!VALID_COMBINATIONS[@]}"; do
               echo "- $model: ${VALID_COMBINATIONS[$model]}"
@@ -134,7 +134,7 @@ jobs:
           }
           # Split the combination into fields
           read CPU CPUD ANDROID_VERSION KERNEL_VERSION <<< "$COMBINATION"
-          echo "✅ Valid combination: FILE=$FILE, CPU=$CPU, CPUD=$CPUD, ANDROID_VERSION=$ANDROID_VERSION, KERNEL_VERSION=$KERNEL_VERSION"
+          echo "Valid combination: FILE=$FILE, CPU=$CPU, CPUD=$CPUD, ANDROID_VERSION=$ANDROID_VERSION, KERNEL_VERSION=$KERNEL_VERSION"
           echo "CPU=$CPU" >> $GITHUB_OUTPUT
           echo "CPUD=$CPUD" >> $GITHUB_OUTPUT
           echo "ANDROID_VERSION=$ANDROID_VERSION" >> $GITHUB_OUTPUT
@@ -152,7 +152,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set Environment Variables
         run: |
           echo "CPU=${{ needs.validate-combinations.outputs.CPU }}" >> $GITHUB_ENV
@@ -186,7 +185,7 @@ jobs:
             echo "Error: BUILD_METHOD environment variable is not set"
             exit 1
           fi
-          echo "✅ Environment variables validated: CPU=${{ env.CPU }}, CPUD=${{ env.CPUD }}, BUILD_METHOD=${{ env.BUILD_METHOD }}"
+          echo "Environment variables validated: CPU=${{ env.CPU }}, CPUD=${{ env.CPUD }}, BUILD_METHOD=${{ env.BUILD_METHOD }}"
       - name: Check Disk Space
         run: df -h
       - name: Maximize Build Space
@@ -234,7 +233,7 @@ jobs:
             ${{ runner.os }}-apt-
       - name: Install Build Dependencies
         run: |
-          echo "🔧 Installing build dependencies..."
+          echo "Installing build dependencies..."
           sudo rm -f /var/lib/apt/lists/lock /var/lib/dpkg/lock
           APT_CACHE_DIR="$HOME/apt-cache"
           mkdir -p "$APT_CACHE_DIR/lists/partial"
@@ -251,7 +250,7 @@ jobs:
           wget https://apt.llvm.org/llvm.sh
           sudo chmod +x llvm.sh
           sudo ./llvm.sh 20 all
-          echo "✅ All dependencies successfully installed"
+          echo "All dependencies successfully installed"
       - name: Restore Ccache
         uses: actions/cache@v3
         with:
@@ -328,7 +327,7 @@ jobs:
           git clone https://gitlab.com/simonpunk/susfs4ksu.git -b gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}
           git clone https://github.com/WildPlusKernel/kernel_patches.git
           cd kernel_platform
-          echo "正在拉取susfs补丁"
+          echo "Fetching susfs patches"
           cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch ./common/
           cp ../kernel_patches/next/scope_min_manual_hooks_v1.4.patch ./common/
           cp ../kernel_patches/next/0001-kernel-implement-susfs-v1.5.8-KernelSU-Next-v1.0.8.patch ./KernelSU-Next/
@@ -341,10 +340,10 @@ jobs:
           GKI_V="${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}"
           SUBLEVEL=$(grep '^SUBLEVEL *=' Makefile | head -n1 | cut -d= -f2 | tr -d ' ')
           if [ "$GKI_V" == "android13-5.15" ] && [ "$SUBLEVEL" -lt 123 ]; then
-            echo "修复内核版本5.15.0到5.15.123可能存在的一些遗留问题"
+            echo "Fixing potential legacy issues for kernel version 5.15.0 to 5.15.123"
             curl -Lo fix_5.15.legacy.patch --retry 5 --retry-delay 2 --retry-connrefused https://raw.githubusercontent.com/Numbersf/Action-Build/SukiSU-Ultra/patches/fix_5.15.legacy
             patch -p1 < fix_5.15.legacy.patch
-            echo "fix_5.15_patch完成"
+            echo "Applied fix_5.15 patch"
           fi
           KERNEL_VERSION="${{ env.KERNEL_VERSION }}"
           file="${{ github.event.inputs.FILE }}"
@@ -355,14 +354,14 @@ jobs:
             fi
             echo "trusty_exists=$TRUSTY_EXISTS" >> $GITHUB_OUTPUT
             if [[ "$TRUSTY_EXISTS" == "false" ]]; then
-              echo "修复内核版本6.6部分机型susfs的问题"
+              echo "Fixing susfs issues for some kernel version 6.6 devices"
               sed -i 's/-32,12 +32,38/-32,11 +32,37/g' 50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch
               sed -i '/#include <trace\/hooks\/fs.h>/d' 50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch
             fi
           fi
-          echo "正在打susfs补丁"
+          echo "Applying susfs patch"
           patch -p1 < 50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch || true
-          echo "susfs_patch完成"
+          echo "Applied susfs patch"
           # Replace next_hooks.patch with syscall_hooks.patch
           cp ../../kernel_patches/69_hide_stuff.patch ./
           patch -p1 -F 3 < 69_hide_stuff.patch
@@ -373,14 +372,14 @@ jobs:
           cd kernel_workspace/kernel_platform/common
           sed -i '1iobj-y += hmbird_patch.o' drivers/Makefile
           wget https://github.com/Numbersf/Action-Build/raw/SukiSU-Ultra/patches/hmbird_patch.patch
-          echo "正在打OGKI转换GKI补丁"
+          echo "Applying OGKI to GKI conversion patch"
           patch -p1 -F 3 < hmbird_patch.patch
-          echo "OGKI转换GKI_patch完成"
+          echo "Applied OGKI to GKI conversion patch"
       - name: Apply new hook and add configuration
         run: |
           cd kernel_workspace/kernel_platform
           echo "CONFIG_KSU=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_KPROBES_HOOK=n" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_KPROBES_HOOKutorials=n" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_KSU_SUSFS=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> ./common/arch/arm64/configs/gki_defconfig
@@ -458,7 +457,7 @@ jobs:
             kernel_platform/external/dtc/scripts/setlocalversion; do
             [ -f "$path" ] || continue
             echo "Modifying: $path"
-            # 删除 -dirty
+            # Remove -dirty
             sed -i 's/ -dirty//g' "$path"
             sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' "$path"
             if grep -q 'KERNELVERSION.*scm_version' "$path"; then
@@ -472,8 +471,7 @@ jobs:
               else
                 echo "Standard build: injecting suffix via cut/echo"
                 if [[ -f ./kernel_platform/build_with_bazel.py ]]; then
-                  echo "使用官方脚本编译且当使用 build_with_bazel 时，可能受特殊符号数量限制，编译失败请修改"
-                  echo "When using the official script and building with build_with_bazel, the build may fail due to a limit on the number of special characters. Please modify the configuration if that happens."
+                  echo "When using the official script with build_with_bazel, the build may fail due to a limit on special characters. Please modify the configuration if this occurs."
                 fi
                 tac "$path" | sed "0,/echo \"\\\$res\"/s//res=\\\$(echo \\\$res | cut -d- -f1-2)-${SUFFIX}; echo \"\\\$res\";/" | tac > "$path.tmp" && mv "$path.tmp" "$path"
               fi
@@ -491,7 +489,7 @@ jobs:
           cd kernel_workspace
           ANDROID_VERSION="${{ env.ANDROID_VERSION }}"
           FAST_BUILD="${{ github.event.inputs.FAST_BUILD }}"
-          # 生成随机数字和随机hash后缀
+          # Generate random digit and hash suffix
           RANDOM_DIGIT=$(od -An -N1 -tu1 < /dev/urandom | tr -d '[:space:]' | awk '{print $1 % 11}')
           RANDOM_HASH=$(od -An -N7 -tx1 /dev/urandom | tr -d ' \n')
           RANDOM_SUFFIX="${RANDOM_DIGIT}-o-g${RANDOM_HASH}"
@@ -501,7 +499,7 @@ jobs:
             kernel_platform/external/dtc/scripts/setlocalversion; do
             [ -f "$path" ] || continue
             echo "Modifying: $path"
-            # 删除 -dirty
+            # Remove -dirty
             sed -i 's/ -dirty//g' "$path"
             sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' "$path"
             if grep -q 'KERNELVERSION.*scm_version' "$path"; then
@@ -549,18 +547,18 @@ jobs:
           cd kernel_workspace/kernel_platform
           DEFCONFIG=./common/arch/arm64/configs/gki_defconfig
           echo "Enabling ThinLTO in $DEFCONFIG"
-          # 开启 CONFIG_LTO
+          # Enable CONFIG_LTO
           sed -i 's/^CONFIG_LTO=n/CONFIG_LTO=y/' "$DEFCONFIG"
-          # 替换 FULL/NONE 为 THIN，防止冲突
+          # Replace FULL/NONE with THIN to avoid conflicts
           sed -i 's/^CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_THIN=y/' "$DEFCONFIG"
           sed -i 's/^CONFIG_LTO_CLANG_NONE=y/CONFIG_LTO_CLANG_THIN=y/' "$DEFCONFIG"
-          # 添加 THIN（若未设置）
+          # Add THIN if not set
           grep -q '^CONFIG_LTO_CLANG_THIN=y' "$DEFCONFIG" || echo 'CONFIG_LTO_CLANG_THIN=y' >> "$DEFCONFIG"
-      - name: 🔨 Build Kernel FAST
+      - name: Build Kernel FAST
         if: ${{ github.event.inputs.FAST_BUILD == 'true' }}
         id: fast_build
         run: |
-          echo "🏗️ Starting fast kernel compilation with ThinLTO..."
+          echo "Starting fast kernel compilation with ThinLTO..."
           KERNEL_VERSION="${{ env.KERNEL_VERSION }}"
           case "$KERNEL_VERSION" in
             "6.6")
@@ -595,13 +593,13 @@ jobs:
               ;;
             *)
               echo "fallback=true" >> "$GITHUB_OUTPUT"
-              echo "⚠️ Current kernel version \"$KERNEL_VERSION\" does not have a corresponding clang toolchain, falling back to using the official build script with ThinLTO"
+              echo "Current kernel version \"$KERNEL_VERSION\" does not have a corresponding clang toolchain, falling back to using the official build script with ThinLTO"
               cd kernel_workspace
               export LTO=thin
               export KCFLAGS="-O2 -flto=thin"
               ./kernel_platform/oplus/build/oplus_build_kernel.sh ${{ env.CPUD }} ${{ env.BUILD_METHOD }}
               ccache -s
-              echo "✅ Kernel compilation completed with fallback and ThinLTO"
+              echo "Kernel compilation completed with fallback and ThinLTO"
               exit 0
               ;;
           esac
@@ -609,7 +607,6 @@ jobs:
           export PATH="/usr/lib/ccache:$PATH"
           export CC="ccache clang"
           cd kernel_workspace/kernel_platform/common
-      
           # Apply Custom Patches
           echo "Applying custom and experimental patches..."
           # Step 1: Modify arch/Kconfig (Add Polly option)
@@ -621,10 +618,8 @@ jobs:
                 Polly is able to optimize various loops throughout the kernel for\n\
                 maximum cache locality. This requires an LLVM toolchain explicitly\n\
                 compiled with Polly support.\n" arch/Kconfig
-      
           # Step 2: Modify init/Kconfig (Change default optimization to O3)
           sed -i 's/ifdef CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE/ifdef CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3\nKBUILD_CFLAGS += -O3\nKBUILD_RUSTFLAGS += -Copt-level=3\nelse ifdef CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE/' Makefile
-      
           cat <<'EOF' > /tmp/kconfig_changes.txt
           default CC_OPTIMIZE_FOR_PERFORMANCE_O3
           config CC_OPTIMIZE_FOR_PERFORMANCE_O3
@@ -635,7 +630,6 @@ jobs:
           EOF
           sed -i '/default CC_OPTIMIZE_FOR_PERFORMANCE/d' init/Kconfig
           sed -i '/prompt "Compiler optimization level"/r /tmp/kconfig_changes.txt' init/Kconfig
-      
           # Step 3: Create a temporary file with the correct content for Makefile
           cat <<'EOF' > /tmp/polly_flags.txt
           # Enable Polly Optimizer (Full Aggressive Set)
@@ -646,7 +640,6 @@ jobs:
                     -mllvm -polly-detect-keep-going \
                     -mllvm -polly-invariant-load-hoisting \
                     -mllvm -polly-vectorizer=stripmine
-      
              ifeq ($(shell test $(CONFIG_CLANG_VERSION) -gt 130000; echo $$?),0)
              KBUILD_CFLAGS += -mllvm -polly-loopfusion-greedy=1 \
                     -mllvm -polly-reschedule=1 \
@@ -663,11 +656,9 @@ jobs:
              endif
           endif
           EOF
-      
           # Step 4: Insert the content of the temporary file into Makefile
           sed -i '/KBUILD_RUSTFLAGS += -Coverflow-checks/r /tmp/polly_flags.txt' Makefile
           echo "Polly source modifications applied successfully using robust method."
-      
           # Step 5: Add additional configurations to gki_defconfig
           DEFCONFIG_PATH="./arch/arm64/configs/gki_defconfig"
           echo "# LLVM Polly Optimizer" >> "${DEFCONFIG_PATH}"
@@ -675,21 +666,20 @@ jobs:
           echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3=y" >> "${DEFCONFIG_PATH}"
           echo "CONFIG_LD_DEAD_CODE_DATA_ELIMINATION=y" >> "${DEFCONFIG_PATH}"
           echo "Custom patches applied successfully."
-      
           # Proceed with compilation
           make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC="ccache clang" RUSTC=../../prebuilts/rust/linux-x86/1.73.0b/bin/rustc PAHOLE=../../prebuilts/kernel-build-tools/linux-x86/bin/pahole LD=ld.lld HOSTLD=ld.lld O=out KCFLAGS+="-O2 -flto=thin" ${USE_LLVM_IAS} gki_defconfig all
           ccache -s
-          echo "✅ Fast kernel compilation completed with ThinLTO"
-      - name: 🔨 Build Kernel (Non-Fast)
+          echo "Fast kernel compilation completed with ThinLTO"
+      - name: Build Kernel (Non-Fast)
         if: ${{ github.event.inputs.FAST_BUILD != 'true' }}
         run: |
-          echo "🏗️ Starting kernel compilation with official build script and ThinLTO..."
+          echo "Starting kernel compilation with official build script and ThinLTO..."
           cd kernel_workspace
           export LTO=thin
           export KCFLAGS="-O2 -flto=thin"
           ./kernel_platform/oplus/build/oplus_build_kernel.sh ${{ env.CPUD }} ${{ env.BUILD_METHOD }}
           ccache -s
-          echo "✅ Kernel compilation completed with ThinLTO"
+          echo "Kernel compilation completed with ThinLTO"
       - name: Make AnyKernel3
         run: |
           git clone https://github.com/Numbersf/AnyKernel3 --depth=1
@@ -700,37 +690,36 @@ jobs:
           image_path=$(find "./kernel_workspace/kernel_platform/common/out/" -name "Image" | head -n 1)
           if [ -n "$image_path" ]; then
             dir1=$(dirname "$image_path")/
-            echo "使用 make 编译的统一路径，成功找到 Image 文件"
+            echo "Found Image file using make compilation path"
           else
             image_path=$(find "./kernel_workspace/kernel_platform/out/" -name "Image" | head -n 1)
             if [ -n "$image_path" ]; then
               dir2=$(dirname "$image_path")/
-              echo "使用官方脚本编译，成功找到 Image 文件"
+              echo "Found Image file using official script compilation"
             else
-              echo "未找到 Image 文件，构建失败" >&2
+              echo "Image file not found, build failed" >&2
               exit 1
             fi
           fi
-          # 复制 Image 到 AnyKernel3
+          # Copy Image to AnyKernel3
           if [ -n "$image_path" ] && [ -f "$image_path" ]; then
             echo "Image file finally located at: $image_path"
             cp "$image_path" ./AnyKernel3/Image
             cp "$image_path" kernel_workspace/kernel_platform/out/FinalImageFind/Image
           fi
-          # 使用官方脚本编译的 sm8750，选择性复制其它镜像文件
+          # Copy additional image files for sm8750 compiled with official script
           if [ -n "$dir2" ] && [ "${{ env.CPU }}" = "sm8750" ] && [ "${{ github.event.inputs.FAST_BUILD }}" = "false" ]; then
-            echo "当前正在使用官方脚本构建 sm8750，需额外复制一些其它镜像文件：dtbo.img、system_dlkm.img、vendor_dlkm.img、vendor_boot.img。请注意，如果你在刷完官方脚本构建后想换成极速构建，请还原这些分区！"
-            echo "You are currently building sm8750 with the official script. Additional image files will be copied: dtbo.img, system_dlkm.img, vendor_dlkm.img, vendor_boot.img. Please note: If you switch to fast build after flashing this build, make sure to restore these partitions!"
+            echo "Building sm8750 with official script, copying additional image files: dtbo.img, system_dlkm.img, vendor_dlkm.img, vendor_boot.img. Note: If you switch to fast build after flashing, restore these partitions!"
             for file in dtbo.img system_dlkm.erofs.img vendor_dlkm.img vendor_boot.img; do
               if [ -f "$dir2$file" ]; then
                 target_name="$file"
-                # 特殊处理 system_dlkm.erofs.img 的目标名
+                # Handle system_dlkm.erofs.img target name
                 if [ "$file" = "system_dlkm.erofs.img" ]; then
                   target_name="system_dlkm.img"
                 fi
                 cp "$dir2$file" "./AnyKernel3/$target_name"
               else
-                echo "$file 不存在，跳过复制"
+                echo "$file not found, skipping copy"
               fi
             done
           fi
@@ -766,9 +755,9 @@ jobs:
           cpu="${{ env.CPU }}"
           xml=".repo/manifests_fallback/${file}.xml"
           cd $GITHUB_WORKSPACE
-          # 去掉末尾的 _x（只删一个）
+          # Remove trailing _x (only one)
           file_base=$(echo "$file" | sed -E 's/_[a-z]$//')
-          # 提取 revision 并解析 Android 版本
+          # Extract revision and parse Android version
           revision_full=$(grep -oP '<project[^>]*name="android_kernel[^"]*"[^>]*revision="\K[^"]+' "$xml" | head -n1 || true)
           if [ -n "$revision_full" ]; then
             android_ver=$(echo "$revision_full" | grep -oP '_v?_?\K([0-9]+\.[0-9]+(?:\.[0-9]+)?)' || true)
