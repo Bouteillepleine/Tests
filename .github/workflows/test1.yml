@@ -1,4 +1,4 @@
-name: Optimized SukiSU Kernel Build
+name: test1
 on:
   workflow_dispatch:
     inputs:
@@ -73,22 +73,21 @@ on:
         default: true
 
 jobs:
-  build:
-    name: ${{ github.event.inputs.FAST_BUILD == 'true' && '[FAST]' || '' }} Build ${{ github.event.inputs.FILE }} ${{ github.event.inputs.SUFFIX }}
+  setup:
+    name: Setup Environment
     runs-on: ubuntu-latest
-    env:
-      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
-      CCACHE_NOHASHDIR: "true"
-      CCACHE_HARDLINK: "true"
-      CCACHE_MAXSIZE: 8G
-      CCACHE_DIR: $HOME/.ccache_${{ github.event.inputs.FILE }}
-      APT_CACHE_DIR: $HOME/apt-cache
-
+    outputs:
+      cpu: ${{ steps.validate.outputs.cpu }}
+      cpud: ${{ steps.validate.outputs.cpud }}
+      android_version: ${{ steps.validate.outputs.android_version }}
+      kernel_version: ${{ steps.validate.outputs.kernel_version }}
+      build_method: ${{ steps.validate.outputs.build_method }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Validate Device Configuration
+        id: validate
         run: |
           set -e
           echo "🔧 Validating device configuration..."
@@ -131,62 +130,58 @@ jobs:
           read CPU CPUD ANDROID_VERSION KERNEL_VERSION <<< "$COMBINATION"
           BUILD_METHOD=$([[ "$ANDROID_VERSION" == "android15" && "$KERNEL_VERSION" == "6.6" ]] && echo "perf" || echo "gki")
           echo "✅ Valid configuration: FILE=$FILE, CPU=$CPU, CPUD=$CPUD, ANDROID_VERSION=$ANDROID_VERSION, KERNEL_VERSION=$KERNEL_VERSION, BUILD_METHOD=$BUILD_METHOD"
-          echo "CPU=$CPU" >> $GITHUB_ENV
-          echo "CPUD=$CPUD" >> $GITHUB_ENV
-          echo "ANDROID_VERSION=$ANDROID_VERSION" >> $GITHUB_ENV
-          echo "KERNEL_VERSION=$KERNEL_VERSION" >> $GITHUB_ENV
-          echo "BUILD_METHOD=$BUILD_METHOD" >> $GITHUB_ENV
+          echo "cpu=$CPU" >> $GITHUB_OUTPUT
+          echo "cpud=$CPUD" >> $GITHUB_OUTPUT
+          echo "android_version=$ANDROID_VERSION" >> $GITHUB_OUTPUT
+          echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_OUTPUT
+          echo "build_method=$BUILD_METHOD" >> $GITHUB_OUTPUT
 
-      - name: Optimize System Resources
+      - name: Install Minimal Dependencies
         run: |
           set -e
-          echo "🔄 Optimizing system resources..."
-          df -h
-          if [ ! -f /swapfile ]; then
-            sudo swapoff -a
-            sudo fallocate -l 3G /swapfile
-            sudo chmod 600 /swapfile
-            sudo mkswap /swapfile
-            sudo swapon /swapfile
-          fi
-          free -h
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc || true
+          echo "📦 Installing minimal dependencies..."
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends \
+            ccache git curl
+          command -v ccache >/dev/null || { echo "❌ ccache installation failed"; exit 1; }
+          command -v git >/dev/null || { echo "❌ git installation failed"; exit 1; }
+          command -v curl >/dev/null || { echo "❌ curl installation failed"; exit 1; }
+          echo "✅ Minimal dependencies installed"
 
       - name: Configure Build Environment
         run: |
           set -e
           echo "⚙️ Configuring build environment..."
-          mkdir -p "${{ env.CCACHE_DIR }}" "${{ env.APT_CACHE_DIR }}"/{archives,lists/partial}
-          echo "Dir::Cache \"${{ env.APT_CACHE_DIR }}\";" | sudo tee /etc/apt/apt.conf.d/99github-actions-cache
-          echo "Dir::Cache::archives \"${{ env.APT_CACHE_DIR }}/archives\";" | sudo tee -a /etc/apt/apt.conf.d/99github-actions-cache
-          sudo chown -R $USER:$USER "${{ env.APT_CACHE_DIR }}"
+          mkdir -p "${{ env.CCACHE_DIR }}" "${{ env.APT_CACHE_DIR}}"/{archives,lists/partial}
+          sudo mkdir -p /etc/apt/apt.conf.d
+          echo "Dir::Cache \"${{ env.APT_CACHE_DIR}}\";" | sudo tee /etc/apt/apt.conf.d/99github-actions-cache
+          echo "Dir::Cache::archives \"${{ env.APT_CACHE_DIR}}/archives\";" | sudo tee -a /etc/apt/apt.conf.d/99github-actions-cache
+          echo "Dir::State::lists \"${{ env.APT_CACHE_DIR}}/lists\";" | sudo tee -a /etc/apt/apt.conf.d/99github-actions-cache
+          sudo chown -R "$USER:$USER" "${{ env.APT_CACHE_DIR}}"
           git config --global user.name "${{ github.actor }}"
           git config --global user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
-          if [ ! -f "${{ env.CCACHE_DIR }}/.ccache_initialized" ]; then
-            ccache -M ${{ env.CCACHE_MAXSIZE }}
-            touch "${{ env.CCACHE_DIR }}/.ccache_initialized"
+          if [ ! -f "${{ env.CCACHE_DIR}}/.ccache_initialized" ]; then
+            ccache -M "${{ env.CCACHE_MAXSIZE }}"
+            touch "${{ env.CCACHE_DIR}}/.ccache_initialized"
           fi
           ccache -s
-
-      - name: Cache Dependencies
-        uses: actions/cache@v3
-        with:
-          path: |
-            ${{ env.APT_CACHE_DIR }}
-            ${{ env.CCACHE_DIR }}
-          key: ${{ runner.os }}-deps-${{ github.event.inputs.FILE }}-${{ github.event.inputs.BUILD_METHOD }}-v1
-          restore-keys: |
-            ${{ runner.os }}-deps-
+        env:
+          CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
+          CCACHE_NOHASHDIR: "true"
+          CCACHE_HARDLINK: "true"
+          CCACHE_MAXSIZE: 8G
+          CCACHE_DIR: $HOME/.ccache_${{ github.event.inputs.FILE }}
+          APT_CACHE_DIR: $HOME/apt-cache
 
       - name: Install Build Dependencies
         run: |
           set -e
-          echo "📦 Installing dependencies..."
+          echo "📦 Installing remaining dependencies..."
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends \
             build-essential flex bison libssl-dev libelf-dev libncurses-dev \
-            ccache rsync kmod cpio git zlib1g-dev bc python3 python-is-python3 \
-            lz4 dwarves llvm clang lld curl unzip cmake ninja-build pahole libxml2-utils
+            rsync kmod cpio zlib1g-dev bc python3 python-is-python3 \
+            lz4 dwarves llvm clang lld unzip cmake ninja-build pahole libxml2-utils
           wget -q https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh 20 all
@@ -194,6 +189,18 @@ jobs:
           curl -s https://storage.googleapis.com/git-repo-downloads/repo > /tmp/repo
           chmod +x /tmp/repo
           sudo mv /tmp/repo /usr/local/bin/
+          command -v repo >/dev/null || { echo "❌ repo installation failed"; exit 1; }
+          echo "✅ Remaining dependencies installed"
+
+      - name: Cache Dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ${{ env.APT_CACHE_DIR }}
+            ${{ env.CCACHE_DIR }}
+          key: ${{ runner.os }}-deps-${{ github.event.inputs.FILE }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
 
       - name: Initialize Kernel Workspace
         run: |
@@ -201,14 +208,50 @@ jobs:
           echo "📁 Setting up kernel workspace..."
           mkdir -p kernel_workspace/.repo/manifests_fallback
           curl -sLO --retry 5 --retry-delay 2 --retry-connrefused \
-            "https://raw.githubusercontent.com/OnePlusOSS/kernel_manifest/oneplus/${{ env.CPU }}/${{ github.event.inputs.FILE }}.xml"
+            "https://raw.githubusercontent.com/OnePlusOSS/kernel_manifest/oneplus/${{ steps.validate.outputs.cpu }}/${{ github.event.inputs.FILE }}.xml"
           [ -f "${{ github.event.inputs.FILE }}.xml" ] || { echo "Failed to download manifest"; exit 1; }
           mv "${{ github.event.inputs.FILE }}.xml" kernel_workspace/.repo/manifests_fallback/
           cd kernel_workspace
-          repo init -u https://github.com/OnePlusOSS/kernel_manifest.git -b oneplus/${{ env.CPU }} -m ${{ github.event.inputs.FILE }}.xml --depth=1
+          repo init -u https://github.com/OnePlusOSS/kernel_manifest.git -b oneplus/${{ steps.validate.outputs.cpu }} -m ${{ github.event.inputs.FILE }}.xml --depth=1
           repo sync -c -j8 --no-tags --no-clone-bundle --force-sync
           find kernel_platform -name '*abi_gki_protected_exports*' -delete || true
           sed -i '/protected_exports_list/d' kernel_platform/*/BUILD.bazel 2>/dev/null || true
+
+      - name: Upload Workspace
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-workspace-${{ github.event.inputs.FILE }}
+          path: kernel_workspace/
+          compression-level: 0
+
+  build:
+    name: Build Kernel ${{ matrix.fast_build && '[FAST]' || '' }}
+    needs: setup
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        fast_build: [true, false]
+      fail-fast: false
+    if: ${{ github.event.inputs.FAST_BUILD == matrix.fast_build || github.event.inputs.FAST_BUILD == 'true' }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Workspace
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-workspace-${{ github.event.inputs.FILE }}
+          path: kernel_workspace/
+
+      - name: Restore Cache
+        uses: actions/cache/restore@v3
+        with:
+          path: |
+            ${{ env.APT_CACHE_DIR }}
+            ${{ env.CCACHE_DIR }}
+          key: ${{ runner.os }}-deps-${{ github.event.inputs.FILE }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
 
       - name: Set Kernel Version Suffix
         run: |
@@ -223,7 +266,7 @@ jobs:
           for script in $(find kernel_platform -name setlocalversion); do
             sed -i 's/ -dirty//g; $i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' "$script"
             if grep -q 'KERNELVERSION.*scm_version' "$script"; then
-              sed -i "s|echo \"\${KERNELVERSION}.*scm_version}\"|echo \"\${KERNELVERSION}-${{ env.ANDROID_VERSION }}-${SUFFIX}\"|" "$script"
+              sed -i "s|echo \"\${KERNELVERSION}.*scm_version}\"|echo \"\${KERNELVERSION}-${{ needs.setup.outputs.android_version }}-${SUFFIX}\"|" "$script"
             else
               sed -i "s|echo \"\\\$res\"|res=\"\$(echo \"\$res\" | cut -d- -f1-2)-${SUFFIX}\"\necho \"\$res\"|" "$script"
             fi
@@ -231,6 +274,9 @@ jobs:
           done
           git add -A
           git commit -m "Apply kernel suffix: $SUFFIX" || true
+        env:
+          CCACHE_DIR: $HOME/.ccache_${{ github.event.inputs.FILE }}
+          APT_CACHE_DIR: $HOME/apt-cache
 
       - name: Integrate KernelSU
         run: |
@@ -252,34 +298,40 @@ jobs:
           echo "KSU_API=$KSU_API" >> $GITHUB_ENV
           echo "KSU_FULL=$KSU_FULL" >> $GITHUB_ENV
           echo "KSU_VER=$KSU_VER" >> $GITHUB_ENV
+        env:
+          CCACHE_DIR: $HOME/.ccache_${{ github.event.inputs.FILE }}
+          APT_CACHE_DIR: $HOME/apt-cache
 
       - name: Apply Kernel Patches
         run: |
           set -e
           echo "🧩 Applying kernel patches..."
           cd kernel_workspace
-          git clone -q https://gitlab.com/simonpunk/susfs4ksu.git -b gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }} --depth=1
+          git clone -q https://gitlab.com/simonpunk/susfs4ksu.git -b gki-${{ needs.setup.outputs.android_version }}-${{ needs.setup.outputs.kernel_version }} --depth=1
           git clone -q https://github.com/ShirkNeko/SukiSU_patch.git --depth=1
           cd kernel_platform/common
-          cp ../../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch .
+          cp ../../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ needs.setup.outputs.android_version }}-${{ needs.setup.outputs.kernel_version }}.patch .
           cp -r ../../susfs4ksu/kernel_patches/fs/* fs/
           cp -r ../../susfs4ksu/kernel_patches/include/linux/* include/linux/
-          if [[ "${{ env.KERNEL_VERSION }}" == "6.6" && ! $(grep -qr 'common-modules/trusty' "$GITHUB_WORKSPACE/kernel_workspace/.repo/manifests_fallback/${{ github.event.inputs.FILE }}.xml") ]]; then
-            sed -i 's/-32,12 +32,38/-32,11 +32,37/g; /#include <trace\/hooks\/fs.h>/d' 50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch
+          if [[ "${{ needs.setup.outputs.kernel_version }}" == "6.6" && ! $(grep -qr 'common-modules/trusty' "$GITHUB_WORKSPACE/kernel_workspace/.repo/manifests_fallback/${{ github.event.inputs.FILE }}.xml") ]]; then
+            sed -i 's/-32,12 +32,38/-32,11 +32,37/g; /#include <trace\/hooks\/fs.h>/d' 50_add_susfs_in_gki-${{ needs.setup.outputs.android_version }}-${{ needs.setup.outputs.kernel_version }}.patch
           fi
-          patch -p1 < 50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch || { echo "SUSFS patch failed"; exit 1; }
+          patch -p1 < 50_add_susfs_in_gki-${{ needs.setup.outputs.android_version }}-${{ needs.setup.outputs.kernel_version }}.patch || { echo "SUSFS patch failed"; exit 1; }
           cp ../../SukiSU_patch/69_hide_stuff.patch .
           patch -p1 -F 3 < 69_hide_stuff.patch || { echo "Hide stuff patch failed"; exit 1; }
           if [ "${{ github.event.inputs.VFS }}" = "true" ]; then
             cp ../../SukiSU_patch/hooks/syscall_hooks.patch .
             patch -p1 -F 3 < syscall_hooks.patch || { echo "VFS patch failed"; exit 1; }
           fi
-          if [ "${{ env.KERNEL_VERSION }}" = "6.6" ]; then
+          if [ "${{ needs.setup.outputs.kernel_version }}" = "6.6" ]; then
             curl -sLO --retry 5 --retry-delay 2 --retry-connrefused https://github.com/Numbersf/Action-Build/raw/SukiSU-Ultra/patches/hmbird_patch.patch
             [ -f hmbird_patch.patch ] || { echo "Failed to download hmbird_patch"; exit 1; }
             sed -i '1iobj-y += hmbird_patch.o' drivers/Makefile
             patch -p1 -F 3 < hmbird_patch.patch || { echo "HMBIRD patch failed"; exit 1; }
           fi
+        env:
+          CCACHE_DIR: $HOME/.ccache_${{ github.event.inputs.FILE }}
+          APT_CACHE_DIR: $HOME/apt-cache
 
       - name: Configure Kernel Build
         run: |
@@ -288,54 +340,57 @@ jobs:
           cd kernel_workspace/kernel_platform/common
           CONFIG="arch/arm64/configs/gki_defconfig"
           cat <<EOF >> "$CONFIG"
-          CONFIG_KSU=y
-          CONFIG_KSU_SUSFS=y
-          CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y
-          CONFIG_KSU_SUSFS_SUS_PATH=y
-          CONFIG_KSU_SUSFS_SUS_MOUNT=y
-          CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
-          CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y
-          CONFIG_KSU_SUSFS_SUS_KSTAT=y
-          CONFIG_KSU_SUSFS_SUS_OVERLAYFS=n
-          CONFIG_KSU_SUSFS_TRY_UMOUNT=y
-          CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y
-          CONFIG_KSU_SUSFS_SPOOF_UNAME=y
-          CONFIG_KSU_SUSFS_ENABLE_LOG=y
-          CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
-          CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
-          CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
-          CONFIG_TMPFS_XATTR=y
-          CONFIG_TMPFS_POSIX_ACL=y
-          CONFIG_TCP_CONG_ADVANCED=y
-          CONFIG_TCP_CONG_BBR=y
-          CONFIG_NET_SCH_FQ=y
-          CONFIG_TCP_CONG_BIC=n
-          CONFIG_TCP_CONG_WESTWOOD=n
-          CONFIG_TCP_CONG_HTCP=n
-          CONFIG_IP_ECN=y
-          CONFIG_TCP_ECN=y
-          CONFIG_IPV6_ECN=y
-          CONFIG_IP_NF_TARGET_ECN=y
-          CONFIG_DEBUG_KERNEL=n
-          CONFIG_DYNAMIC_DEBUG=n
-          CONFIG_DEBUG_INFO=n
-          CONFIG_MQ_IOSCHED_SSG=y
-          CONFIG_MQ_IOSCHED_SSG_CGROUP=y
-          CONFIG_LTO_CLANG=y
-          CONFIG_LTO_CLANG_THIN=y
-          CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y
-          CONFIG_LLVM_POLLY=y
-          CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3=y
-          CONFIG_LD_DEAD_CODE_DATA_ELIMINATION=y
-          $( [ "${{ github.event.inputs.KPM }}" = "true" ] && echo "CONFIG_KPM=y" )
-          $( [ "${{ github.event.inputs.VFS }}" = "true" ] && echo -e "CONFIG_KSU_SUSFS_SUS_SU=n\nCONFIG_KSU_MANUAL_HOOK=y" || echo -e "CONFIG_KSU_SUSFS_SUS_SU=y\nCONFIG_KPROBES=y" )
-          EOF
+CONFIG_KSU=y
+CONFIG_KSU_SUSFS=y
+CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y
+CONFIG_KSU_SUSFS_SUS_PATH=y
+CONFIG_KSU_SUSFS_SUS_MOUNT=y
+CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
+CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y
+CONFIG_KSU_SUSFS_SUS_KSTAT=y
+CONFIG_KSU_SUSFS_SUS_OVERLAYFS=n
+CONFIG_KSU_SUSFS_TRY_UMOUNT=y
+CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y
+CONFIG_KSU_SUSFS_SPOOF_UNAME=y
+CONFIG_KSU_SUSFS_ENABLE_LOG=y
+CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+CONFIG_TMPFS_XATTR=y
+CONFIG_TMPFS_POSIX_ACL=y
+CONFIG_TCP_CONG_ADVANCED=y
+CONFIG_TCP_CONG_BBR=y
+CONFIG_NET_SCH_FQ=y
+CONFIG_TCP_CONG_BIC=n
+CONFIG_TCP_CONG_WESTWOOD=n
+CONFIG_TCP_CONG_HTCP=n
+CONFIG_IP_ECN=y
+CONFIG_TCP_ECN=y
+CONFIG_IPV6_ECN=y
+CONFIG_IP_NF_TARGET_ECN=y
+CONFIG_DEBUG_KERNEL=n
+CONFIG_DYNAMIC_DEBUG=n
+CONFIG_DEBUG_INFO=n
+CONFIG_MQ_IOSCHED_SSG=y
+CONFIG_MQ_IOSCHED_SSG_CGROUP=y
+CONFIG_LTO_CLANG=y
+CONFIG_LTO_CLANG_THIN=y
+CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y
+CONFIG_LLVM_POLLY=y
+CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3=y
+CONFIG_LD_DEAD_CODE_DATA_ELIMINATION=y
+$( [ "${{ github.event.inputs.KPM }}" = "true" ] && echo "CONFIG_KPM=y" )
+$( [ "${{ github.event.inputs.VFS }}" = "true" ] && echo -e "CONFIG_KSU_SUSFS_SUS_SU=n\nCONFIG_KSU_MANUAL_HOOK=y" || echo -e "CONFIG_KSU_SUSFS_SUS_SU=y\nCONFIG_KPROBES=y" )
+EOF
           sed -i '/CONFIG_REGMAP_KUNIT=m/d; /CONFIG_INPUT_KUNIT_TEST=m/d; /CONFIG_SND_SOC_TOPOLOGY_KUNIT_TEST=m/d' "$CONFIG"
           sed -i '/CONFIG_SND_SOC_UTILS_KUNIT_TEST=m/d; /CONFIG_HID_KUNIT_TEST=m/d; /CONFIG_RTC_LIB_KUNIT_TEST=m/d' "$CONFIG"
           sed -i '/CONFIG_CLK_KUNIT_TEST=m/d; /CONFIG_CLK_GATE_KUNIT_TEST=m/d; /CONFIG_IIO_FORMAT_KUNIT_TEST=m/d' "$CONFIG"
           sed -i '/CONFIG_EXT4_KUNIT_TESTS=m/d; /CONFIG_FAT_KUNIT_TEST=m/d; /CONFIG_LTO_NONE/d' "$CONFIG"
           sed -i '/CONFIG_LTO_CLANG_FULL/d; /CONFIG_LTO_CLANG/d' "$CONFIG"
           sed -i 's/check_defconfig//' ./build.config.gki
+        env:
+          CCACHE_DIR: $HOME/.ccache_${{ github.event.inputs.FILE }}
+          APT_CACHE_DIR: $HOME/apt-cache
 
       - name: Set Build Timestamp
         if: ${{ github.event.inputs.BUILD_TIME != '' && !contains(github.event.inputs.BUILD_TIME, 'F') && !contains(github.event.inputs.BUILD_TIME, 'f') }}
@@ -347,16 +402,19 @@ jobs:
           for mkcompile in $(find . -name mkcompile_h); do
             perl -i -pe "s/UTS_VERSION=\".*?\"/UTS_VERSION=\"#1 SMP PREEMPT ${{ github.event.inputs.BUILD_TIME }}\"/" "$mkcompile"
           done
+        env:
+          CCACHE_DIR: $HOME/.ccache_${{ github.event.inputs.FILE }}
+          APT_CACHE_DIR: $HOME/apt-cache
 
       - name: Build Kernel
         run: |
           set -e
-          echo "🏗️ Building kernel (${{ github.event.inputs.FAST_BUILD == 'true' && 'Fast' || 'Standard' }} mode)..."
+          echo "🏗️ Building kernel (${{ matrix.fast_build && 'Fast' || 'Standard' }} mode)..."
           cd kernel_workspace/kernel_platform
           export LTO=thin
           export KCFLAGS="-O2 -flto=thin"
-          if [ "${{ github.event.inputs.FAST_BUILD }}" = "true" ]; then
-            case "${{ env.KERNEL_VERSION }}" in
+          if [ "${{ matrix.fast_build }}" = "true" ]; then
+            case "${{ needs.setup.outputs.kernel_version }}" in
               "6.6"|"6.1")
                 TOOLCHAIN="clang-r510928"
                 CLANG_DIR="prebuilts"
@@ -378,8 +436,8 @@ jobs:
                 USE_LLVM_IAS="LLVM_IAS=1"
                 ;;
               *)
-                echo "⚠️ Unsupported kernel version: ${{ env.KERNEL_VERSION }}"
-                ./oplus/build/oplus_build_kernel.sh ${{ env.CPUD }} ${{ env.BUILD_METHOD }}
+                echo "⚠️ Unsupported kernel version: ${{ needs.setup.outputs.kernel_version }}"
+                ./oplus/build/oplus_build_kernel.sh ${{ needs.setup.outputs.cpud }} ${{ needs.setup.outputs.build_method }}
                 ccache -s
                 exit 0
                 ;;
@@ -396,9 +454,35 @@ jobs:
             make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC="ccache clang" RUSTC=../../prebuilts/rust/linux-x86/1.73.0b/bin/rustc PAHOLE=../../prebuilts/kernel-build-tools/linux-x86/bin/pahole LD=ld.lld HOSTLD=ld.lld O=out KCFLAGS+="-O2 -flto=thin" ${USE_LLVM_IAS} gki_defconfig all
           else
             [ -f oplus/build/oplus_build_kernel.sh ] || { echo "Build script not found"; exit 1; }
-            ./oplus/build/oplus_build_kernel.sh ${{ env.CPUD }} ${{ env.BUILD_METHOD }}
+            ./oplus/build/oplus_build_kernel.sh ${{ needs.setup.outputs.cpud }} ${{ needs.setup.outputs.build_method }}
           fi
           ccache -s
+        env:
+          CCACHE_DIR: $HOME/.ccache_${{ github.event.inputs.FILE }}
+          APT_CACHE_DIR: $HOME/apt-cache
+
+      - name: Upload Kernel Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-build-${{ github.event.inputs.FILE }}-${{ matrix.fast_build && 'fast' || 'standard' }}
+          path: |
+            kernel_workspace/kernel_platform/common/out/
+            kernel_workspace/kernel_platform/out/
+          compression-level: 0
+
+  package:
+    name: Package Artifacts
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Kernel Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-build-${{ github.event.inputs.FILE }}-${{ github.event.inputs.FAST_BUILD == 'true' && 'fast' || 'standard' }}
+          path: kernel_workspace/
 
       - name: Prepare Artifacts
         run: |
@@ -415,7 +499,7 @@ jobs:
           fi
           cp "$IMAGE_PATH" AnyKernel3/Image
           cp "$IMAGE_PATH" kernel_platform/out/FinalImageFind/Image
-          if [ "${{ env.CPU }}" = "sm8750" ] && [ "${{ github.event.inputs.FAST_BUILD }}" = "false" ]; then
+          if [ "${{ needs.setup.outputs.cpu }}" = "sm8750" ] && [ "${{ github.event.inputs.FAST_BUILD }}" = "false" ]; then
             for file in dtbo.img system_dlkm.erofs.img vendor_dlkm.img vendor_boot.img; do
               if [ -f "$(dirname "$IMAGE_PATH")/$file" ]; then
                 target_name="${file/system_dlkm.erofs.img/system_dlkm.img}"
@@ -432,6 +516,7 @@ jobs:
             ./patch_linux
             mv oImage Image
             cp Image $GITHUB_WORKSPACE/kernel_workspace/AnyKernel3/Image
+            cd $GITHUB_WORKSPACE/kernel_workspace
           fi
           if [ "${{ github.event.inputs.SUSFS_CI }}" = "CI" ]; then
             echo "⬇️ Downloading SUSFS module from CI..."
