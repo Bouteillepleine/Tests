@@ -1,4 +1,4 @@
-name: Build KernelSU Next SUSFS All
+name: Build KernelSU Next
 on:
   workflow_dispatch:
     inputs:
@@ -66,8 +66,15 @@ on:
 jobs:
   validate-combinations:
     runs-on: ubuntu-latest
+    outputs:
+      CPU: ${{ steps.set_outputs.outputs.CPU }}
+      CPUD: ${{ steps.set_outputs.outputs.CPUD }}
+      ANDROID_VERSION: ${{ steps.set_outputs.outputs.ANDROID_VERSION }}
+      KERNEL_VERSION: ${{ steps.set_outputs.outputs.KERNEL_VERSION }}
+      BUILD_METHOD: ${{ steps.set_outputs.outputs.BUILD_METHOD }}
     steps:
       - name: Validate Input Combinations
+        id: set_outputs
         run: |
           echo "🔧 Validating input combinations..."
           FILE="${{ github.event.inputs.FILE }}"
@@ -128,19 +135,18 @@ jobs:
           # Split the combination into fields
           read CPU CPUD ANDROID_VERSION KERNEL_VERSION <<< "$COMBINATION"
           echo "✅ Valid combination: FILE=$FILE, CPU=$CPU, CPUD=$CPUD, ANDROID_VERSION=$ANDROID_VERSION, KERNEL_VERSION=$KERNEL_VERSION"
-          echo "CPU=$CPU" >> $GITHUB_ENV
-          echo "CPUD=$CPUD" >> $GITHUB_ENV
-          echo "ANDROID_VERSION=$ANDROID_VERSION" >> $GITHUB_ENV
-          echo "KERNEL_VERSION=$KERNEL_VERSION" >> $GITHUB_ENV
+          echo "CPU=$CPU" >> $GITHUB_OUTPUT
+          echo "CPUD=$CPUD" >> $GITHUB_OUTPUT
+          echo "ANDROID_VERSION=$ANDROID_VERSION" >> $GITHUB_OUTPUT
+          echo "KERNEL_VERSION=$KERNEL_VERSION" >> $GITHUB_OUTPUT
           # Set BUILD_METHOD based on ANDROID_VERSION and KERNEL_VERSION
           if [[ "$ANDROID_VERSION" == "android15" && "$KERNEL_VERSION" == "6.6" ]]; then
-            echo "BUILD_METHOD=perf" >> $GITHUB_ENV
+            echo "BUILD_METHOD=perf" >> $GITHUB_OUTPUT
           else
-            echo "BUILD_METHOD=gki" >> $GITHUB_ENV
+            echo "BUILD_METHOD=gki" >> $GITHUB_OUTPUT
           fi
-
   build:
-    needs: [validate-combinations]
+    needs khóa [validate-combinations]
     name: Build for ${{ github.event.inputs.FILE }} ${{ github.event.inputs.FAST_BUILD == 'true' && ' [FAST]' || '' }}${{ github.event.inputs.SCHED == 'true' && ' [SCHED]' || '' }}
     runs-on: ubuntu-latest
     steps:
@@ -149,16 +155,15 @@ jobs:
 
       - name: Set Environment Variables
         run: |
-          echo "CPU=${{ env.CPU }}" >> $GITHUB_ENV
-          echo "CPUD=${{ env.CPUD }}" >> $GITHUB_ENV
-          echo "ANDROID_VERSION=${{ env.ANDROID_VERSION }}" >> $GITHUB_ENV
-          echo "KERNEL_VERSION=${{ env.KERNEL_VERSION }}" >> $GITHUB_ENV
-          echo "BUILD_METHOD=${{ env.BUILD_METHOD }}" >> $GITHUB_ENV
+          echo "CPU=${{ needs.validate-combinations.outputs.CPU }}" >> $GITHUB_ENV
+          echo "CPUD=${{ needs.validate-combinations.outputs.CPUD }}" >> $GITHUB_ENV
+          echo "ANDROID_VERSION=${{ needs.validate-combinations.outputs.ANDROID_VERSION }}" >> $GITHUB_ENV
+          echo "KERNEL_VERSION=${{ needs.validate-combinations.outputs.KERNEL_VERSION }}" >> $GITHUB_ENV
+          echo "BUILD_METHOD=${{ needs.validate-combinations.outputs.BUILD_METHOD }}" >> $GITHUB_ENV
           echo "CCACHE_COMPILERCHECK=%compiler% -dumpmachine; %compiler% -dumpversion" >> $GITHUB_ENV
           echo "CCACHE_NOHASHDIR=true" >> $GITHUB_ENV
           echo "CCACHE_HARDLINK=true" >> $GITHUB_ENV
           echo "CCACHE_MAXSIZE=8G" >> $GITHUB_ENV
-
       - name: Debug Environment Variables
         run: |
           env
@@ -167,7 +172,6 @@ jobs:
           echo "ANDROID_VERSION=${{ env.ANDROID_VERSION }}"
           echo "KERNEL_VERSION=${{ env.KERNEL_VERSION }}"
           echo "BUILD_METHOD=${{ env.BUILD_METHOD }}"
-
       - name: Validate Environment Variables
         run: |
           if [ -z "${{ env.CPU }}" ]; then
@@ -183,7 +187,6 @@ jobs:
             exit 1
           fi
           echo "✅ Environment variables validated: CPU=${{ env.CPU }}, CPUD=${{ env.CPUD }}, BUILD_METHOD=${{ env.BUILD_METHOD }}"
-
       - name: Check Disk Space
         run: df -h
 
@@ -205,18 +208,15 @@ jobs:
           sudo mkswap /swapfile
           sudo swapon /swapfile
           free -h
-
       - name: Set Cache Environment
         run: |
-          echo "CCACHE_DIR=$HOME/.ccache_${{ github.event.inputs.FILE }}" >> $GITHUB_ENV
+          echo-CCACHE_DIR="$HOME/.ccache_${{ github.event.inputs.FILE }}" >> $GITHUB_ENV
           mkdir -p "$HOME/.ccache_${{ github.event.inputs.FILE }}"
           echo "set: $HOME/.ccache_${{ github.event.inputs.FILE }}"
-
       - name: Configure Git
         run: |
           git config --global user.name "O+builder"
           git config --global user.email "O+builder@yahoo.com"
-
       - name: Configure APT Cache
         run: |
           APT_CACHE_DIR="$HOME/apt-cache"
@@ -227,15 +227,13 @@ jobs:
           echo "Acquire::Check-Valid-Until \"false\";" | sudo tee -a /etc/apt/apt.conf.d/90user-cache
           echo "Acquire::Languages \"none\";" | sudo tee -a /etc/apt/apt.conf.d/90user-cache
           sudo chown -R $USER:$USER "$APT_CACHE_DIR"
-
       - name: Set APT Cache
         uses: actions/cache@v3
         with:
           path: ${{ env.HOME }}/apt-cache
-          key: ${{ runner.os }}-apt-${{ hashFiles('.github/workflows/test3.yml') }}
+          key: ${{ runner.os }}-apt-${{ hashFiles('.github/workflows/build.yml') }}
           restore-keys: |
             ${{ runner.os }}-apt-
-
       - name: Install Build Dependencies
         run: |
           echo "🔧 Installing build dependencies..."
@@ -256,13 +254,11 @@ jobs:
           sudo chmod +x llvm.sh
           sudo ./llvm.sh 20 all
           echo "✅ All dependencies successfully installed"
-
       - name: Restore Ccache
         uses: actions/cache@v3
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-${{ runner.os }}-${{ github.ref_name }}-${{ github.event.inputs.FILE }}-${{ env.BUILD_METHOD }}-${{ github.event.inputs.FAST_BUILD == 'true' && 'alpha' || 'beta' }}-15
-
       - name: Initialize Ccache
         run: |
           INIT_FLAG="${{ env.CCACHE_DIR }}/.ccache_initialized"
@@ -280,13 +276,11 @@ jobs:
             echo "ccache Not Installed, Skipping"
           fi
           ccache -s
-
       - name: Install Repo Tool
         run: |
           curl https://storage.googleapis.com/git-repo-downloads/repo > ~/repo
           chmod a+x ~/repo
           sudo mv ~/repo /usr/local/bin/repo
-
       - name: Initialize Repo and Sync
         run: |
           mkdir kernel_workspace && cd kernel_workspace
@@ -300,7 +294,6 @@ jobs:
           fi
           rm kernel_platform/common/android/abi_gki_protected_exports_* || echo "No protected exports!"
           rm kernel_platform/msm-kernel/android/abi_gki_protected_exports_* || echo "No protected exports!"
-
       - name: Debug Show Selected Inputs
         run: |
           echo "Selected CPU: ${{ env.CPU }}"
@@ -314,7 +307,6 @@ jobs:
           echo "Selected SUSFS_CI: ${{ github.event.inputs.SUSFS_CI }}"
           echo "Selected FAST_BUILD: ${{ github.event.inputs.FAST_BUILD }}"
           echo "Selected SCHED: ${{ github.event.inputs.SCHED }}"
-
       - name: Download kernel-manifest
         id: fetch_manifest
         run: |
@@ -324,7 +316,6 @@ jobs:
           echo "Downloading manifest $file.xml from branch oneplus/$cpu..."
           curl -LO --retry 5 --retry-delay 2 --retry-connrefused "https://raw.githubusercontent.com/OnePlusOSS/kernel_manifest/oneplus/$cpu/$file.xml"
           mv "$file.xml" ".repo/manifests_fallback/${file}.xml"
-
       - name: Set up KernelSU Next
         run: |
           cd kernel_workspace/kernel_platform
@@ -333,7 +324,6 @@ jobs:
           KSU_VERSION=$(expr $(/usr/bin/git rev-list --count HEAD) "+" 10200)
           echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
           sed -i "s/DKSU_VERSION=11998/DKSU_VERSION=${KSU_VERSION}/" kernel/Makefile
-
       - name: Set up susfs
         run: |
           cd kernel_workspace
@@ -379,7 +369,6 @@ jobs:
           cp ../../kernel_patches/69_hide_stuff.patch ./
           patch -p1 -F 3 < 69_hide_stuff.patch
           patch -p1 --fuzz=3 < scope_min_manual_hooks_v1.4.patch
-
       - name: Apply Convert HMBIRD_OGKI to HMBIRD_GKI
         if: ${{ env.KERNEL_VERSION == '6.6' }}
         run: |
@@ -389,7 +378,6 @@ jobs:
           echo "正在打OGKI转换GKI补丁"
           patch -p1 -F 3 < hmbird_patch.patch
           echo "OGKI转换GKI_patch完成"
-
       - name: Apply new hook and add configuration
         run: |
           cd kernel_workspace/kernel_platform
@@ -451,7 +439,6 @@ jobs:
           sed -i 's/CONFIG_EXT4_KUNIT_TESTS=m/CONFIG_EXT4_KUNIT_TESTS=n/g' "$CONFIG_FILE"
           sed -i 's/CONFIG_FAT_KUNIT_TEST=m/CONFIG_FAT_KUNIT_TEST=n/g' "$CONFIG_FILE"          
           sed -i '2s/check_defconfig//' ./common/build.config.gki
-
       - name: Add sched_ext
         if: ${{ github.event.inputs.SCHED == 'true' }}
         run: |
@@ -460,7 +447,6 @@ jobs:
           cp -r ./sched_ext/* ./common/kernel/sched
           rm -rf ./sched_ext/.git
           cd common/kernel/sched
-
       - name: Custom Kernel Suffix if set
         if: ${{ github.event.inputs.SUFFIX != '' }}
         run: |
@@ -501,7 +487,6 @@ jobs:
           done
           git add -A
           git commit -m "Custom suffix & removed -dirty"
-
       - name: Custom Kernel Random Suffix if empty
         if: ${{ github.event.inputs.SUFFIX == '' }}
         run: |
@@ -541,7 +526,6 @@ jobs:
           done
           git add -A
           git commit -m "Random suffix & remove -dirty"
-
       - name: Custom BUILD_TIME
         shell: bash
         run: |
@@ -561,7 +545,6 @@ jobs:
               fi
             done
           fi
-
       - name: Enable lto=thin For FAST
         if: ${{ (env.KERNEL_VERSION == '5.10' || env.KERNEL_VERSION == '5.15') && github.event.inputs.FAST_BUILD == 'true' }}
         run: |
@@ -575,7 +558,6 @@ jobs:
           sed -i 's/^CONFIG_LTO_CLANG_NONE=y/CONFIG_LTO_CLANG_THIN=y/' "$DEFCONFIG"
           # 添加 THIN（若未设置）
           grep -q '^CONFIG_LTO_CLANG_THIN=y' "$DEFCONFIG" || echo 'CONFIG_LTO_CLANG_THIN=y' >> "$DEFCONFIG"
-
       - name: 🔨 Build Kernel FAST
         if: ${{ github.event.inputs.FAST_BUILD == 'true' }}
         id: fast_build
@@ -711,7 +693,6 @@ jobs:
           ./kernel_platform/oplus/build/oplus_build_kernel.sh ${{ env.CPUD }} ${{ env.BUILD_METHOD }}
           ccache -s
           echo "✅ Kernel compilation completed with ThinLTO"
-
       - name: Make AnyKernel3
         run: |
           git clone https://github.com/Numbersf/AnyKernel3 --depth=1
@@ -756,7 +737,6 @@ jobs:
               fi
             done
           fi
-
       - name: Download Latest SUSFS Module from CI
         if: ${{ github.event.inputs.SUSFS_CI == 'CI' }}
         continue-on-error: true
@@ -776,14 +756,12 @@ jobs:
               echo "Failed to fetch artifact URL"
             fi
           fi
-
       - name: Download Latest SUSFS Module from Release
         if: ${{ github.event.inputs.SUSFS_CI == 'Release' }}
         continue-on-error: true
         run: |
           wget -O ksu_module_susfs_1.5.2+_Release.zip https://github.com/sidex15/ksu_module_susfs/releases/latest/download/ksu_module_susfs_1.5.2+.zip
           cp ksu_module_susfs_1.5.2+_Release.zip ./AnyKernel3/
-
       - name: Auto map FILE to Android version by manifest
         id: file_clean
         run: |
@@ -806,7 +784,6 @@ jobs:
             clean_file="${file_base}_AndroidUnknown"
           fi
           echo "value=$clean_file" >> "$GITHUB_OUTPUT"
-
       - name: Upload AnyKernel3
         uses: actions/upload-artifact@v4
         with:
