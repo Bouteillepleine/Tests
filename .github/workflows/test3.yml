@@ -1,4 +1,4 @@
-name: Build KernelSU Next 
+name: Build KernelSU Next SUSFS All
 on:
   workflow_dispatch:
     inputs:
@@ -34,46 +34,6 @@ on:
           - oneplus_13s
           - oneplus_pad_2_pro
           - oneplus_pad_3
-      COMBINATION:
-        type: choice
-        description: "Configuration File"
-        required: true
-        default: oneplus_13r
-        options:
-          - oneplus_nord_ce4_lite_5g_v
-          - oneplus_nord_ce4_v
-          - oneplus_nord_4_v
-          - oneplus_ace_3v_v
-          - oneplus_10_pro_v
-          - oneplus_10t_v
-          - oneplus_11r_v
-          - oneplus_ace2_v
-          - oneplus_ace_pro_v
-          - oneplus_11_v
-          - oneplus_12r_v
-          - oneplus_ace2_pro_v
-          - oneplus_ace3_v
-          - oneplus_open_v
-          - oneplus12_v
-          - oneplus_13r
-          - oneplus_ace3_pro_v
-          - oneplus_ace5
-          - oneplus_pad_pro_v
-          - oneplus_pad2_v
-          - oneplus_ace5_pro
-          - oneplus_13
-          - oneplus_13t
-          - oneplus_13s
-          - oneplus_pad_2_pro
-          - oneplus_pad_3
-      BUILD_METHOD:
-        type: choice
-        description: "Build Method"
-        required: true
-        default: gki
-        options:
-          - gki
-          - perf
       SUSFS_CI:
         type: choice
         description: "SUSFS Module Download Method"
@@ -92,7 +52,7 @@ on:
         type: string
         description: "Custom Build Time (leave blank to use current time)"
         required: false
-        default: "Sun Jul 13 17:24:05 SAST 2025"
+        default: "Sun Jul 13 17:34:00 SAST 2025"
       FAST_BUILD:
         type: boolean
         description: "Enable Fast Build?"
@@ -183,19 +143,21 @@ jobs:
     needs: [validate-combinations]
     name: Build for ${{ github.event.inputs.FILE }} ${{ github.event.inputs.FAST_BUILD == 'true' && ' [FAST]' || '' }}${{ github.event.inputs.SCHED == 'true' && ' [SCHED]' || '' }}
     runs-on: ubuntu-latest
-    env:
-      CPU: ${{ env.CPU }}
-      CPUD: ${{ env.CPUD }}
-      ANDROID_VERSION: ${{ env.ANDROID_VERSION }}
-      KERNEL_VERSION: ${{ env.KERNEL_VERSION }}
-      BUILD_METHOD: ${{ env.BUILD_METHOD }}
-      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
-      CCACHE_NOHASHDIR: "true"
-      CCACHE_HARDLINK: "true"
-      CCACHE_MAXSIZE: 8G
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set Environment Variables
+        run: |
+          echo "CPU=${{ env.CPU }}" >> $GITHUB_ENV
+          echo "CPUD=${{ env.CPUD }}" >> $GITHUB_ENV
+          echo "ANDROID_VERSION=${{ env.ANDROID_VERSION }}" >> $GITHUB_ENV
+          echo "KERNEL_VERSION=${{ env.KERNEL_VERSION }}" >> $GITHUB_ENV
+          echo "BUILD_METHOD=${{ env.BUILD_METHOD }}" >> $GITHUB_ENV
+          echo "CCACHE_COMPILERCHECK=%compiler% -dumpmachine; %compiler% -dumpversion" >> $GITHUB_ENV
+          echo "CCACHE_NOHASHDIR=true" >> $GITHUB_ENV
+          echo "CCACHE_HARDLINK=true" >> $GITHUB_ENV
+          echo "CCACHE_MAXSIZE=8G" >> $GITHUB_ENV
 
       - name: Debug Environment Variables
         run: |
@@ -212,11 +174,15 @@ jobs:
             echo "Error: CPU environment variable is not set"
             exit 1
           fi
+          if [ -z "${{ env.CPUD }}" ]; then
+            echo "Error: CPUD environment variable is not set"
+            exit 1
+          fi
           if [ -z "${{ env.BUILD_METHOD }}" ]; then
             echo "Error: BUILD_METHOD environment variable is not set"
             exit 1
           fi
-          echo "✅ Environment variables validated: CPU=${{ env.CPU }}, BUILD_METHOD=${{ env.BUILD_METHOD }}"
+          echo "✅ Environment variables validated: CPU=${{ env.CPU }}, CPUD=${{ env.CPUD }}, BUILD_METHOD=${{ env.BUILD_METHOD }}"
 
       - name: Check Disk Space
         run: df -h
@@ -445,6 +411,45 @@ jobs:
           echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_KSU_SUSFS_SUS_SU=n" >> ./common/arch/arm64/configs/gki_defconfig
+          # TMPFS configuration
+          echo "CONFIG_TMPFS_XATTR=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_TMPFS_POSIX_ACL=y" >> ./common/arch/arm64/configs/gki_defconfig
+          # BBR configuration
+          echo "CONFIG_TCP_CONG_ADVANCED=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_TCP_CONG_BBR=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_NET_SCH_FQ=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_TCP_CONG_BIC=n" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_TCP_CONG_WESTWOOD=n" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_TCP_CONG_HTCP=n" >> ./common/arch/arm64/configs/gki_defconfig
+          # ECN configuration
+          echo "CONFIG_IP_ECN=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_TCP_ECN=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IPV6_ECN=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_IP_NF_TARGET_ECN=y" >> ./common/arch/arm64/configs/gki_defconfig
+          # others configurations
+          CONFIG_FILE="./common/arch/arm64/configs/gki_defconfig"         
+          echo "CONFIG_DYNAMIC_DEBUG=n" >> "$CONFIG_FILE"
+          echo "CONFIG_DEBUG_INFO=n" >> "$CONFIG_FILE"
+          echo "CONFIG_MQ_IOSCHED_SSG=y" >> "$CONFIG_FILE"
+          echo "CONFIG_MQ_IOSCHED_SSG_CGROUP=y" >> "$CONFIG_FILE"
+          sed -i '/CONFIG_LTO_NONE/d' "$CONFIG_FILE"
+          sed -i '/CONFIG_LTO_CLANG_FULL/d' "$CONFIG_FILE"
+          sed -i '/CONFIG_LTO_CLANG_THIN/d' "$CONFIG_FILE"
+          sed -i '/CONFIG_LTO_CLANG/d' "$CONFIG_FILE"
+          echo "CONFIG_LTO_CLANG=y" >> "$CONFIG_FILE"
+          echo "CONFIG_LTO_CLANG_THIN=y" >> "$CONFIG_FILE"
+          echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y" >> "$CONFIG_FILE"
+          sed -i 's/CONFIG_REGMAP_KUNIT=m/CONFIG_REGMAP_KUNIT=n/g' "$CONFIG_FILE"
+          sed -i 's/CONFIG_INPUT_KUNIT_TEST=m/CONFIG_INPUT_KUNIT_TEST=n/g' "$CONFIG_FILE"
+          sed -i 's/CONFIG_SND_SOC_TOPOLOGY_KUNIT_TEST=m/CONFIG_SND_SOC_TOPOLOGY_KUNIT_TEST=n/g' "$CONFIG_FILE"
+          sed -i 's/CONFIG_SND_SOC_UTILS_KUNIT_TEST=m/CONFIG_SND_SOC_UTILS_KUNIT_TEST=n/g' "$CONFIG_FILE"
+          sed -i 's/CONFIG_HID_KUNIT_TEST=m/CONFIG_HID_KUNIT_TEST=n/g' "$CONFIG_FILE"
+          sed -i 's/CONFIG_RTC_LIB_KUNIT_TEST=m/CONFIG_RTC_LIB_KUNIT_TEST=n/g' "$CONFIG_FILE"
+          sed -i 's/CONFIG_CLK_KUNIT_TEST=m/CONFIG_CLK_KUNIT_TEST=n/g' "$CONFIG_FILE"
+          sed -i 's/CONFIG_CLK_GATE_KUNIT_TEST=m/CONFIG_CLK_GATE_KUNIT_TEST=n/g' "$CONFIG_FILE"
+          sed -i 's/CONFIG_IIO_FORMAT_KUNIT_TEST=m/CONFIG_IIO_FORMAT_KUNIT_TEST=n/g' "$CONFIG_FILE"
+          sed -i 's/CONFIG_EXT4_KUNIT_TESTS=m/CONFIG_EXT4_KUNIT_TESTS=n/g' "$CONFIG_FILE"
+          sed -i 's/CONFIG_FAT_KUNIT_TEST=m/CONFIG_FAT_KUNIT_TEST=n/g' "$CONFIG_FILE"          
           sed -i '2s/check_defconfig//' ./common/build.config.gki
 
       - name: Add sched_ext
