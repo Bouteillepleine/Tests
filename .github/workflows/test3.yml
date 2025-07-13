@@ -1,4 +1,4 @@
-name:  KernelSU Next SUSFS 
+name: Build KernelSU Next 
 on:
   workflow_dispatch:
     inputs:
@@ -92,7 +92,7 @@ on:
         type: string
         description: "Custom Build Time (leave blank to use current time)"
         required: false
-        default: "Fri May 30 04:01:05 UTC 2025"
+        default: "Sun Jul 13 17:24:05 SAST 2025"
       FAST_BUILD:
         type: boolean
         description: "Enable Fast Build?"
@@ -181,13 +181,14 @@ jobs:
 
   build:
     needs: [validate-combinations]
-    name: ${{ github.event.inputs.FAST_BUILD == 'true' && ' [FAST]' || '' }}${{ github.event.inputs.SCHED == 'true' && ' [SCHED]' || '' }}For ${{ github.event.inputs.FILE }} ${{ env.BUILD_METHOD }} ${{ github.event.inputs.SUFFIX }}
+    name: Build for ${{ github.event.inputs.FILE }} ${{ github.event.inputs.FAST_BUILD == 'true' && ' [FAST]' || '' }}${{ github.event.inputs.SCHED == 'true' && ' [SCHED]' || '' }}
     runs-on: ubuntu-latest
     env:
       CPU: ${{ env.CPU }}
       CPUD: ${{ env.CPUD }}
       ANDROID_VERSION: ${{ env.ANDROID_VERSION }}
       KERNEL_VERSION: ${{ env.KERNEL_VERSION }}
+      BUILD_METHOD: ${{ env.BUILD_METHOD }}
       CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
       CCACHE_NOHASHDIR: "true"
       CCACHE_HARDLINK: "true"
@@ -195,6 +196,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Debug Environment Variables
+        run: |
+          env
+          echo "CPU=${{ env.CPU }}"
+          echo "CPUD=${{ env.CPUD }}"
+          echo "ANDROID_VERSION=${{ env.ANDROID_VERSION }}"
+          echo "KERNEL_VERSION=${{ env.KERNEL_VERSION }}"
+          echo "BUILD_METHOD=${{ env.BUILD_METHOD }}"
+
+      - name: Validate Environment Variables
+        run: |
+          if [ -z "${{ env.CPU }}" ]; then
+            echo "Error: CPU environment variable is not set"
+            exit 1
+          fi
+          if [ -z "${{ env.BUILD_METHOD }}" ]; then
+            echo "Error: BUILD_METHOD environment variable is not set"
+            exit 1
+          fi
+          echo "✅ Environment variables validated: CPU=${{ env.CPU }}, BUILD_METHOD=${{ env.BUILD_METHOD }}"
 
       - name: Check Disk Space
         run: df -h
@@ -244,7 +266,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ env.HOME }}/apt-cache
-          key: ${{ runner.os }}-apt-${{ hashFiles('.github/workflows/build.yml') }}
+          key: ${{ runner.os }}-apt-${{ hashFiles('.github/workflows/test3.yml') }}
           restore-keys: |
             ${{ runner.os }}-apt-
 
@@ -783,5 +805,5 @@ jobs:
       - name: Upload AnyKernel3
         uses: actions/upload-artifact@v4
         with:
-          name: AnyKernel3_KernelSU_Next_${{ env.KSUVER }}_${{ steps.file_clean.outputs.value }}${{ steps.suffix.outputs.value }}
+          name: AnyKernel3_KernelSU_Next_${{ env.KSUVER }}_${{ steps.file_clean.outputs.value }}_${{ env.BUILD_METHOD }}
           path: ./AnyKernel3/*
