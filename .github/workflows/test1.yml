@@ -108,7 +108,7 @@ jobs:
             ["oneplus_ace3"]="sm8550 kalama android13 5.15"
             ["oneplus_open"]="sm8550 kalama android13 5.15"
             ["oneplus12"]="sm8650 pineapple android14 6.1"
-            ["oneplus_13r"]="sm8650 pineapple android14 6.1"
+            ["oneplus_13r"]="sm8750 sun android15 6.6"
             ["oneplus_ace3_pro"]="sm8650 pineapple android14 6.1"
             ["oneplus_ace5"]="sm8650 pineapple android14 6.1"
             ["oneplus_pad_pro"]="sm8650 pineapple android14 6.1"
@@ -297,14 +297,17 @@ jobs:
             SUFFIX="$(shuf -i 0-9 -n 1)-o-$(openssl rand -hex 4)"
           fi
           echo "Using suffix: $SUFFIX"
+          echo "Android version: ${{ needs.setup.outputs.android_version }}"
           for script in $(find kernel_platform -name setlocalversion); do
-            sed -i 's/ -dirty//g; $i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' "$script"
+            sed -i 's/ -dirty//g; $ i\res=$(echo "$res" | sed '\''s/-dirty//g'\'')' "$script"
             if grep -q 'KERNELVERSION.*scm_version' "$script"; then
               sed -i "s|echo \"\${KERNELVERSION}.*scm_version}\"|echo \"\${KERNELVERSION}-${{ needs.setup.outputs.android_version }}-${SUFFIX}\"|" "$script"
             else
               sed -i "s|echo \"\\\$res\"|res=\"\$(echo \"\$res\" | cut -d- -f1-2)-${SUFFIX}\"\necho \"\$res\"|" "$script"
             fi
             chmod +x "$script"
+            echo "Modified $script:"
+            cat "$script"
           done
           git add -A
           git commit -m "Apply kernel suffix: $SUFFIX" || true
