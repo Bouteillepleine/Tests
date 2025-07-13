@@ -208,12 +208,22 @@ jobs:
           path: |
             ${{ env.APT_CACHE_DIR }}
             ${{ env.CCACHE_DIR }}
-          key: ${{ runner.os }}-deps-${{ github.event.inputs.FILE }}-${{ github.sha }}
+          key: ${{ runner.os }}-deps-${{ github.event.inputs.FILE }}-v1-${{ github.sha }}
           restore-keys: |
+            ${{ runner.os }}-deps-${{ github.event.inputs.FILE }}-v1-
             ${{ runner.os }}-deps-
         env:
           CCACHE_DIR: $HOME/.ccache_${{ github.event.inputs.FILE }}
           APT_CACHE_DIR: $HOME/apt-cache
+
+      - name: Verify Cache Save
+        if: always()
+        run: |
+          set -e
+          echo "🔍 Cache statistics after save:"
+          ccache -s || echo "No ccache data available"
+        env:
+          CCACHE_DIR: $HOME/.ccache_${{ github.event.inputs.FILE }}
 
       - name: Initialize Kernel Workspace
         run: |
@@ -260,12 +270,22 @@ jobs:
           path: |
             ${{ env.APT_CACHE_DIR }}
             ${{ env.CCACHE_DIR }}
-          key: ${{ runner.os }}-deps-${{ github.event.inputs.FILE }}-${{ github.sha }}
+          key: ${{ runner.os }}-deps-${{ github.event.inputs.FILE }}-v1-${{ github.sha }}
           restore-keys: |
+            ${{ runner.os }}-deps-${{ github.event.inputs.FILE }}-v1-
             ${{ runner.os }}-deps-
         env:
           CCACHE_DIR: $HOME/.ccache_${{ github.event.inputs.FILE }}
           APT_CACHE_DIR: $HOME/apt-cache
+
+      - name: Verify Cache Restoration
+        if: always()
+        run: |
+          set -e
+          echo "🔍 Cache statistics after restoration:"
+          ccache -s || echo "No ccache data available"
+        env:
+          CCACHE_DIR: $HOME/.ccache_${{ github.event.inputs.FILE }}
 
       - name: Set Kernel Version Suffix
         run: |
@@ -556,10 +576,14 @@ jobs:
           else
             echo "⚠️ No SukiSU Manager APK found in latest release"
           fi
+        env:
+          CCACHE_DIR: $HOME/.ccache_${{ github.event.inputs.FILE }}
+          APT_CACHE_DIR: $HOME/apt-cache
 
       - name: Set Artifact Suffix
         id: suffix
         run: |
+          set -e
           SUFFIX=""
           [ "${{ github.event.inputs.VFS }}" = "true" ] && SUFFIX="${SUFFIX}_VFS"
           [ "${{ github.event.inputs.KPM }}" = "true" ] && SUFFIX="${SUFFIX}_KPM"
