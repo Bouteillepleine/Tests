@@ -308,8 +308,13 @@ jobs:
           fi
           echo "Using suffix: $SUFFIX"
           echo "Android version: ${{ needs.setup.outputs.android_version }}"
-          for script in $(find kernel_platform -name setlocalversion); do
-            sed -i 's/ -dirty//g; $ i\res=$(echo "$res" | sed '\''s/-dirty//g'\'')' "$script"
+          SCRIPTS=$(find kernel_platform -name setlocalversion)
+          if [ -z "$SCRIPTS" ]; then
+            echo "❌ No setlocalversion scripts found in kernel_platform"
+            exit 1
+          fi
+          for script in $SCRIPTS; do
+            sed -i 's/ -dirty//g; $ i\res=$(echo "$res" | sed '"'"'s/-dirty//g'"'"')' "$script"
             if grep -q 'KERNELVERSION.*scm_version' "$script"; then
               sed -i "s|echo \"\${KERNELVERSION}.*scm_version}\"|echo \"\${KERNELVERSION}-${{ needs.setup.outputs.android_version }}-${SUFFIX}\"|" "$script"
             else
@@ -321,6 +326,26 @@ jobs:
           done
           git add -A
           git commit -m "Apply kernel suffix: $SUFFIX" || true
+        env:
+          CCACHE_DIR: $HOME/.ccache_${{ github.event.inputs.FILE }}
+          APT_CACHE_DIR: $HOME/apt-cache
+
+      - name: Validate Kernel Version Suffix
+        run: |
+          set -e
+          echo "🔍 Validating kernel version suffix..."
+          cd kernel_workspace
+          for script in $(find kernel_platform -name setlocalversion); do
+            if grep -q ' -dirty' "$script"; then
+              echo "❌ -dirty still present in $script"
+              exit 1
+            fi
+            if ! grep -q "${{ needs.setup.outputs.android_version }}-${SUFFIX}" "$script"; then
+              echo "❌ Suffix ${{ needs.setup.outputs.android_version }}-${SUFFIX} not applied in $script"
+              exit 1
+            fi
+            echo "✅ $script validated"
+          done
         env:
           CCACHE_DIR: $HOME/.ccache_${{ github.event.inputs.FILE }}
           APT_CACHE_DIR: $HOME/apt-cache
