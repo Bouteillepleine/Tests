@@ -102,7 +102,7 @@ jobs:
           FILE="${{ matrix.file }}"
           
           # Define valid combinations with base model only (no _v/_t/_u...)
-          declare -A VALID_COMBINATIONS=(              
+          declare -A VALID_COMBINATIONS=(
           ["oneplus_nord_ce4_lite_5g"]="sm6375 blair android14 6.1"
           ["oneplus_nord_ce4"]="sm7550 crow android14 5.15"
           ["oneplus_nord_4"]="sm7675 pineapple android14 6.1"
@@ -129,10 +129,10 @@ jobs:
           ["oneplus_13s"]="sm8750 sun android15 6.6"
           ["oneplus_pad_2_pro"]="sm8750 sun android15 6.6"
           ["oneplus_pad_3"]="sm8750 sun android15 6.6"
-        )
+          )
         
-        # Recursively strip "_[a-z]+" suffixes to match base key
-        get_combination() {
+          # Recursively strip "_[a-z]+" suffixes to match base key
+          get_combination() {
           local key="$1"
           while true; do
             if [[ -n "${VALID_COMBINATIONS[$key]+_}" ]]; then
@@ -145,10 +145,10 @@ jobs:
               return 1
             fi
           done
-        }
+          }
         
-        # Try to resolve FILE to a valid combination
-        COMBINATION="$(get_combination "$FILE")" || {
+          # Try to resolve FILE to a valid combination
+          COMBINATION="$(get_combination "$FILE")" || {
           echo "❌ Unknown FILE: $FILE"
           echo "Valid base models:"
           for model in "${!VALID_COMBINATIONS[@]}"; do
@@ -173,6 +173,7 @@ jobs:
         else
           echo "BUILD_METHOD=gki" >> $GITHUB_ENV
         fi
+         
       - name: Check Disk Space
         run: df -h
 
