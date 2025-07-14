@@ -1,4 +1,4 @@
-name: Build-OnePlus-Kernels
+name: Testee
 on:
   workflow_dispatch:
     inputs:
