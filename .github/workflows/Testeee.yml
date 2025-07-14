@@ -97,6 +97,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Configure Git Identity
+        run: |
+          echo "Configuring Git identity..."
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          echo "Git identity configured."
+
       - name: Validate Input Combinations
         run: |
           echo "🔧 Validating input combinations..."
