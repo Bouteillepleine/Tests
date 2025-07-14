@@ -728,13 +728,13 @@ jobs:
 
             # Step 3: Create kconfig_changes.txt with proper EOF delimiter
             cat <<'EOF' > /tmp/kconfig_changes.txt
-default CC_OPTIMIZE_FOR_PERFORMANCE_O3
-config CC_OPTIMIZE_FOR_PERFORMANCE_O3
-    bool "Optimize more for performance (-O3)"
-    help
-      Choosing this option will pass "-O3" to your compiler to optimize
-      the kernel yet more for performance.
-EOF
+            default CC_OPTIMIZE_FOR_PERFORMANCE_O3
+            config CC_OPTIMIZE_FOR_PERFORMANCE_O3
+                bool "Optimize more for performance (-O3)"
+                help
+                  Choosing this option will pass "-O3" to your compiler to optimize
+                  the kernel yet more for performance.
+            EOF
 
             # Step 4: Apply kconfig changes
             sed -i '/default CC_OPTIMIZE_FOR_PERFORMANCE/d' init/Kconfig
@@ -742,31 +742,31 @@ EOF
 
             # Step 5: Create polly_flags.txt with proper EOF delimiter
             cat <<'EOF' > /tmp/polly_flags.txt
-# Enable Polly Optimizer (Full Aggressive Set)
-ifdef CONFIG_LLVM_POLLY
-   KBUILD_CFLAGS += -fvectorize -funroll-loops -mllvm -polly \
-          -mllvm -polly-run-inliner \
-          -mllvm -polly-ast-use-context \
-          -mllvm -polly-detect-keep-going \
-          -mllvm -polly-invariant-load-hoisting \
-          -mllvm -polly-vectorizer=stripmine
-
-   ifeq ($(shell test $(CONFIG_CLANG_VERSION) -gt 130000; echo $$?),0)
-   KBUILD_CFLAGS += -mllvm -polly-loopfusion-greedy=1 \
-          -mllvm -polly-reschedule=1 \
-          -mllvm -polly-postopts=1 \
-          -mllvm -polly-num-threads=0 \
-          -mllvm -polly-omp-backend=LLVM \
-          -mllvm -polly-scheduling=dynamic \
-          -mllvm -polly-scheduling-chunksize=1
-   else
-   KBUILD_CFLAGS += -mllvm -polly-opt-fusion=max
-   endif
-   ifdef CONFIG_LD_DEAD_CODE_DATA_ELIMINATION
-   POLLY_FLAGS += -mllvm -polly-run-dce
-   endif
-endif
-EOF
+            # Enable Polly Optimizer (Full Aggressive Set)
+            ifdef CONFIG_LLVM_POLLY
+               KBUILD_CFLAGS += -fvectorize -funroll-loops -mllvm -polly \
+                      -mllvm -polly-run-inliner \
+                      -mllvm -polly-ast-use-context \
+                      -mllvm -polly-detect-keep-going \
+                      -mllvm -polly-invariant-load-hoisting \
+                      -mllvm -polly-vectorizer=stripmine
+            
+               ifeq ($(shell test $(CONFIG_CLANG_VERSION) -gt 130000; echo $$?),0)
+               KBUILD_CFLAGS += -mllvm -polly-loopfusion-greedy=1 \
+                      -mllvm -polly-reschedule=1 \
+                      -mllvm -polly-postopts=1 \
+                      -mllvm -polly-num-threads=0 \
+                      -mllvm -polly-omp-backend=LLVM \
+                      -mllvm -polly-scheduling=dynamic \
+                      -mllvm -polly-scheduling-chunksize=1
+               else
+               KBUILD_CFLAGS += -mllvm -polly-opt-fusion=max
+               endif
+               ifdef CONFIG_LD_DEAD_CODE_DATA_ELIMINATION
+               POLLY_FLAGS += -mllvm -polly-run-dce
+               endif
+            endif
+            EOF
 
             # Step 6: Insert polly_flags.txt into Makefile
             sed -i '/KBUILD_RUSTFLAGS += -Coverflow-checks/r /tmp/polly_flags.txt' Makefile
