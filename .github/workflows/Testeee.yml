@@ -1,4 +1,4 @@
-name: Build OnePlus_SukiSU Ultra All
+name: Testeeee
 on:
   workflow_dispatch:
     inputs:
@@ -47,7 +47,7 @@ on:
         type: string
         description: "Branch Name (Required)/Custom Version Identifier (Optional, Leave Empty to Keep Unchanged)"
         required: false
-        default: "susfs-main/Numbersf"
+        default: "susfs-main/Ultra"
       BUILD_TIME:
         type: string
         description: "Custom Build Time (Enter F to Use Current Time)"
