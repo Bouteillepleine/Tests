@@ -48,12 +48,12 @@ on:
         type: string
         description: "Branch Name (cannot be empty)/Custom Version Identifier (leave empty to not modify)"
         required: false
-        default: "susfs-main/Numbersf"
+        default: "susfs-main/Ultra"
       BUILD_TIME:
         type: string
         description: "Custom Build Time (enter F to use current time)"
         required: false
-        default: "Sun Jun 15 14:56:02 UTC 2025"
+        default: "Sun Jun 15 14:55:00 UTC 2025"
       SUFFIX:
         type: string
         description: "Custom Kernel Suffix (use random string if not provided)"
