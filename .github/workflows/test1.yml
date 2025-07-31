@@ -656,10 +656,7 @@ jobs:
           echo "CONFIG_IP_NF_TARGET_ECN=y" >> "$CONFIG_FILE"
           echo "CONFIG_NET_SCH_FQ=y" >> "$CONFIG_FILE"
           echo "CONFIG_NET_SCH_FQ_CODEL=y" >> "$CONFIG_FILE"
-          sed -i -e '/CONFIG_NET_SCH_FQ_CODEL=/d' -e '$aCONFIG_NET_SCH_FQ_CODEL=y' ./common/arch/arm64/configs/gki_defconfig
-
-          # Remove build checks
-          sed -i 's/check_defconfig//' ./common/build.config.gki
+          sed -i -e '/CONFIG_NET_SCH_FQ_CODEL=/d' -e '$aCONFIG_NET_SCH_FQ_CODEL=y' ./common/arch/arm64/configs/gki_defconfig          
 
       - name: Additional Configurations
         run: |
@@ -703,6 +700,9 @@ jobs:
             echo "CONFIG_CRYPTO_LZ4K_OPLUS=y" >> "$CONFIG_FILE"
             echo "CONFIG_ZRAM_WRITEBACK=y" >> "$CONFIG_FILE"
           fi
+
+          # Remove build checks
+          sed -i 's/check_defconfig//' ./common/build.config.gki
 
       # Fengchi kernel, based on sm8750, may not work or boot on other CPUs
       - name: Add sched_ext
@@ -759,31 +759,26 @@ jobs:
           KERNEL_VERSION="${{ env.KERNEL_VERSION }}"
           case "$KERNEL_VERSION" in
             "6.6")
-              export KBUILD_BUILD_TIMESTAMP="Wed Jun 18 13:44:55 UTC 2025"
               CLANG_PATH="clang-r510928"
               CLANG_DIR="prebuilts"
               USE_LLVM_IAS=""
               ;;
-            "6.1")
-              export KBUILD_BUILD_TIMESTAMP="Wed Jun 18 13:44:55 UTC 2025"
+            "6.1")            
               CLANG_PATH="clang-r510928"
               CLANG_DIR="prebuilts"
               USE_LLVM_IAS=""
               ;;
-            "5.15")
-              export KBUILD_BUILD_TIMESTAMP="Wed Jun 18 13:44:55 UTC 2025"
+            "5.15")              
               CLANG_PATH="clang-r450784e"
               CLANG_DIR="prebuilts"
               USE_LLVM_IAS=""
               ;;
-            "5.10")
-              export KBUILD_BUILD_TIMESTAMP="Wed Jun 18 13:44:55 UTC 2025"
+            "5.10")              
               CLANG_PATH="clang-r416183b"
               CLANG_DIR="prebuilts-master"
               USE_LLVM_IAS="LLVM_IAS=1"
               ;;
-            "5.4")
-              export KBUILD_BUILD_TIMESTAMP="Wed Jun 18 13:44:55 UTC 2025"
+            "5.4")           
               CLANG_PATH="clang-r377782d"
               CLANG_DIR="prebuilts"
               USE_LLVM_IAS="LLVM_IAS=1"
