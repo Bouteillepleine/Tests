@@ -48,7 +48,7 @@ on:
         type: string
         description: "Branch Name (cannot be empty)/Custom Version Identifier (leave empty to not modify)"
         required: false
-        default: "susfs-main/Ultra"
+        default: "susfs-main/⚡Ultra⚡"
       BUILD_TIME:
         type: string
         description: "Custom Build Time (enter F to use current time)"
