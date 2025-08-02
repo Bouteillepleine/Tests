@@ -1,4 +1,4 @@
-name: Stock Build OnePlus Nord 4 SukiSU Ultra Kernel
+name: test3
 on:
   workflow_dispatch:
     inputs:
